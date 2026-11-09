@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>箱中有箱</title>
+<style>
+  /* 版面：左邊是金庫舞台，右邊是道具舖，下方是圖鑑 */
+  :root { --bg:#10211f; --panel:#1a302c; --panel2:#233d38; --ink:#f4ead2; --soft:#a9b8a6; --line:#35524b; --gold:#f2c14e; --gold-ink:#2b2110; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--bg); color:var(--ink); font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif; }
+  #app { max-width:1320px; margin:0 auto; padding-block:12px 24px; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:14px; }
+  header { grid-column:1/-1; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  h1 { font-size:24px; margin:0; letter-spacing:3px; color:var(--gold); }
+  #coins { font-size:23px; font-weight:700; font-variant-numeric:tabular-nums; }
+  #opened { color:var(--soft); font-size:14px; }
+  .tools { margin-left:auto; display:flex; gap:8px; }
+  .tools button { border:1px solid var(--line); background:var(--panel); color:var(--ink); border-radius:8px; padding:6px 12px; font:inherit; font-size:14px; cursor:pointer; }
+  main { min-width:0; display:grid; gap:10px; align-content:start; }
+  #tiers { display:flex; flex-wrap:wrap; gap:6px; }
+  .tier { border:1px solid var(--line); background:var(--panel); color:var(--ink); border-radius:8px; padding:6px 11px; font:inherit; font-size:14px; cursor:pointer; font-variant-numeric:tabular-nums; }
+  .tier.on { background:var(--gold); color:var(--gold-ink); border-color:var(--gold); font-weight:700; }
+  .tier.off { opacity:.55; }
+  #stage { position:relative; border-radius:12px; overflow:hidden; border:1px solid var(--line); }
+  canvas { display:block; width:100%; height:auto; touch-action:manipulation; cursor:pointer; user-select:none; -webkit-user-select:none; }
+  #pity { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:8px 12px; font-size:14px; }
+  #pityTop { display:flex; justify-content:space-between; gap:10px; color:var(--soft); margin-bottom:5px; font-variant-numeric:tabular-nums; }
+  #pbar { height:8px; border-radius:5px; background:var(--panel2); overflow:hidden; }
+  #pbar i { display:block; height:100%; width:0; background:#b77ff0; }
+  #codex { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  #codex h2 { font-size:16px; margin:0 0 8px; }
+  #codex h2 small { color:var(--soft); font-weight:400; font-size:13px; margin-left:6px; }
+  #grid { display:grid; grid-template-columns:62px repeat(6, minmax(0,1fr)); gap:4px; font-size:12px; align-items:center; }
+  #grid .lab { color:var(--soft); }
+  #grid .slot { background:var(--panel2); border:1px solid transparent; border-radius:7px; text-align:center; padding:4px 1px; min-height:48px; min-width:0; }
+  #grid .slot b { display:block; font-size:20px; line-height:1.25; font-weight:400; }
+  #grid .slot span { display:block; font-size:11px; color:var(--soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #shop { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; align-self:start; }
+  #shop h2 { font-size:16px; margin:0 0 8px; }
+  .item { width:100%; display:grid; grid-template-columns:1fr auto; gap:1px 8px; text-align:left; border:1px solid var(--line); background:var(--panel2); color:var(--ink); border-radius:9px; padding:8px 10px; margin-bottom:7px; font:inherit; cursor:pointer; }
+  .item:hover:not(.off) { border-color:var(--gold); }
+  .item.off { opacity:.5; cursor:default; }
+  .item .n { font-weight:700; font-size:15px; }
+  .item .c { font-weight:700; color:var(--gold); font-size:14px; font-variant-numeric:tabular-nums; }
+  .item .d { grid-column:1/-1; color:var(--soft); font-size:12.5px; }
+  #overlay { position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(5,14,12,.72); padding:16px; }
+  #overlay.on { display:flex; }
+  #card { background:var(--panel); border:1px solid var(--gold); border-radius:14px; padding:22px 26px; max-width:430px; text-align:center; }
+  #card h3 { margin:0 0 8px; font-size:22px; color:var(--gold); }
+  #card p { margin:0 0 16px; color:var(--soft); line-height:1.7; }
+  #card button { border:0; background:var(--gold); color:var(--gold-ink); font:inherit; font-weight:700; font-size:16px; padding:10px 22px; border-radius:9px; cursor:pointer; }
+  #toast { position:absolute; bottom:12px; left:50%; transform:translateX(-50%); background:rgba(5,14,12,.88); color:var(--ink); padding:7px 14px; border-radius:18px; font-size:14px; opacity:0; transition:opacity .2s; pointer-events:none; white-space:nowrap; max-width:92%; overflow:hidden; text-overflow:ellipsis; }
+  #toast.on { opacity:1; }
+  button:focus-visible { outline:2px solid var(--gold); outline-offset:2px; }
+  @media (max-width:860px) { #app { grid-template-columns:minmax(0,1fr); } #grid { grid-template-columns:46px repeat(6, minmax(0,1fr)); } #grid .slot span { display:none; } #grid .slot { min-height:36px; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>箱中有箱</h1>
+    <div id="coins">🪙 0</div>
+    <div id="opened"></div>
+    <div class="tools"><button id="mute">聲音：開</button><button id="reset">重新開始</button></div>
+  </header>
+  <main>
+    <div id="tiers"></div>
+    <div id="stage">
+      <canvas id="c" aria-label="點擊寶箱把它撬開"></canvas>
+      <div id="toast"></div>
+      <div id="overlay"><div id="card"><h3>最後的箱子，打開了</h3><p>裡面沒有金幣，只有一張紙條：<br>「本箱為可回收容器，請依規定分類。」<br>你站在金山上，決定繼續開。</p><button id="cb">繼續開箱</button></div></div>
+    </div>
+    <div id="pity"><div id="pityTop"><span>保底：連續沒開到史詩以上</span><span id="ptext"></span></div><div id="pbar"><i></i></div></div>
+    <section id="codex"><h2>圖鑑<small id="cinfo"></small></h2><div id="grid"></div></section>
+  </main>
+  <aside id="shop"><h2>道具舖</h2><div id="list"></div></aside>
+</div>
+<script>
+(() => {
+'use strict';
+const W = 900, H = 520, SAVE = 'chest-in-chest-v1';
+const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+const SCALE = Math.min(2, window.devicePixelRatio || 1);
+canvas.width = W * SCALE; canvas.height = H * SCALE;
+const $ = id => document.getElementById(id);
+const rand = (a, b) => a + Math.random() * (b - a);
+const calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const RAR = [
+  { n:'普通', w:55, m:1, c:'#cfd6c8' },
+  { n:'優良', w:27, m:2, c:'#6fd17a' },
+  { n:'稀有', w:12, m:5, c:'#5aa9f2' },
+  { n:'史詩', w:4.5, m:15, c:'#b77ff0' },
+  { n:'傳說', w:1.2, m:50, c:'#f2a33c' },
+  { n:'神話', w:.3, m:200, c:'#ff5f7e' },
+];
+const TIERS = [
+  { n:'木箱', cost:0, body:'#8a5a33', band:'#5d3a1f', lock:'#c9a24a' },
+  { n:'鐵箱', cost:300, body:'#6d7a80', band:'#434e54', lock:'#d6dde0' },
+  { n:'銀箱', cost:4e3, body:'#b9c4cc', band:'#7f8d97', lock:'#f4f8fb' },
+  { n:'金箱', cost:6e4, body:'#e0ac37', band:'#a8761b', lock:'#fff0b8' },
+  { n:'水晶箱', cost:2.5e6, body:'#6fd0d8', band:'#3489a0', lock:'#e6fbff' },
+  { n:'星辰箱', cost:1.5e8, body:'#3f3a8c', band:'#25215c', lock:'#ffd86e' },
+  { n:'最後的箱子', cost:1e10, body:'#2a2a2e', band:'#0f0f12', lock:'#ff5f7e', last:true },
+];
+const ITEMS = [
+  [['🪵','木屑'],['🧦','單隻襪'],['🥄','生鏽湯匙'],['🗝️','舊鑰匙'],['🪙','老銅板'],['🧸','會說話的熊']],
+  [['🔩','螺絲'],['🔧','扳手'],['🧲','磁鐵'],['⚙️','永動齒輪'],['🛡️','小圓盾'],['🤖','迷你機器人']],
+  [['🍴','銀叉'],['🔔','銀鈴'],['🪞','魔鏡'],['🌙','月牙'],['🦄','獨角獸'],['👻','銀幽靈']],
+  [['🍯','金蜂蜜'],['🏅','獎牌'],['🎺','金喇叭'],['👑','王冠'],['🐉','小金龍'],['☀️','口袋太陽']],
+  [['💎','碎晶'],['🔮','占卜球'],['🧊','永凍冰'],['🦋','水晶蝶'],['🌈','彩虹罐'],['🪐','小行星環']],
+  [['✨','星塵'],['☄️','彗尾'],['🌌','星雲'],['🛸','幽浮'],['🌠','許願流星'],['🕳️','口袋黑洞']],
+];
+const UPS = [
+  { id:'bar', n:'撬棍', d:'每次敲擊力道 ×1.3', base:10, g:1.5, max:200, fx:l=>`力道 ${fmt(1.3**l)}` },
+  { id:'arm', n:'機械手', d:'自動幫你敲箱子', base:40, g:1.6, max:60, fx:l=>`${l} 隻` },
+  { id:'value', n:'鑑定師', d:'所有金幣 ×1.15', base:150, g:2.6, max:30, fx:l=>`×${fmt(1.15**l)}` },
+  { id:'luck', n:'幸運草', d:'稀有度越高，提升越多', base:100, g:2.4, max:15, fx:l=>`幸運 +${l*6}%` },
+  { id:'nest', n:'箱中箱', d:'開完有機率立刻再開一箱', base:250, g:2.4, max:15, fx:l=>`${6+l*2}%` },
+  { id:'pity', n:'保底券', d:'更快保證史詩以上', base:400, g:2.6, max:8, fx:l=>`${50-l*4} 箱` },
+  { id:'multi', n:'連開', d:'每箱多開出一件獎勵', base:800, g:5, max:4, fx:l=>`每箱 ${l+1} 件` },
+];
+
+let S = { coins:0, tier:0, unlocked:0, up:{}, found:{}, pity:0, opened:0, ended:false };
+UPS.forEach(u => S.up[u.id] = 0);
+let muted = false, chest, mimic = null, parts = [], flash = 0, shake = 0, autoAcc = 0, chain = 0, paused = false, armPhase = 0;
+
+function fmt(n) {
+  if (n < 100 && n % 1 !== 0) return n.toFixed(n < 10 ? 2 : 1);
+  if (n < 1e4) return Math.floor(n).toLocaleString('en-US');
+  if (n < 1e8) return (n / 1e4).toFixed(1) + ' 萬';
+  if (n < 1e12) return (n / 1e8).toFixed(2) + ' 億';
+  if (n < 1e16) return (n / 1e12).toFixed(2) + ' 兆';
+  return n.toExponential(2);
+}
+const foundCount = () => Object.keys(S.found).length;
+const tierDone = () => ITEMS.filter((row, t) => row.every((_, r) => S.found[t + '-' + r])).length;
+const click = () => 1.3 ** S.up.bar;
+const dps = () => S.up.arm * .6 * click();
+const luck = () => S.up.luck * .06 + tierDone() * .1;
+const coinMult = () => (1 + .04 * foundCount()) * 1.15 ** S.up.value;
+const pityMax = () => 50 - S.up.pity * 4;
+const nestP = () => .06 + S.up.nest * .02;
+const hpOf = t => TIERS[t].last ? 2e7 : 8 * 6 ** t;
+const baseOf = t => 8 ** t;
+const costOf = u => Math.ceil(u.base * u.g ** S.up[u.id]);
+
+function newChest(free) {
+  const max = hpOf(S.tier);
+  chest = { t:S.tier, hp:free ? 0 : max, max, phase:'idle', time:0, dur:0, hold:0, rar:0, drops:[], total:0, free:!!free };
+  if (free) open();
+}
+function roll(t) {
+  const L = 1 + luck(), forced = S.pity + 1 >= pityMax();
+  const ws = RAR.map((r, i) => (forced && i < 3) ? 0 : r.w * L ** i);
+  let x = Math.random() * ws.reduce((a, b) => a + b, 0), r = 0;
+  for (; r < ws.length - 1; r++) { x -= ws[r]; if (x <= 0) break; }
+  S.pity = r >= 3 ? 0 : S.pity + 1;
+  return r;
+}
+function open() {
+  const c = chest;
+  S.opened++;
+  if (TIERS[c.t].last) {
+    c.phase = 'reveal'; c.last = true; c.rar = 5; c.dur = 1.4; c.hold = 1; c.time = 0; c.total = 2e10 * coinMult();
+    c.drops = [{ t:c.t, r:5 }]; rising(5); return;
+  }
+  if (!c.free && Math.random() < .04) { startMimic(c); return; }
+  const n = 1 + S.up.multi;
+  for (let i = 0; i < n; i++) {
+    const r = roll(c.t); c.drops.push({ t:c.t, r }); c.total += baseOf(c.t) * RAR[r].m * coinMult();
+    if (r > c.rar) c.rar = r;
+  }
+  c.phase = 'reveal'; c.time = 0;
+  c.dur = .1 + c.rar * .2; c.hold = .22 + c.rar * .28;
+  if (c.rar >= 1) rising(c.rar);
+}
+function burst() {
+  const c = chest; c.burst = true;
+  S.coins += c.total;
+  let fresh = null;
+  for (const d of c.drops) if (!c.last) {
+    const k = d.t + '-' + d.r;
+    if (!S.found[k]) { S.found[k] = 1; fresh = d; }
+  }
+  if (fresh) { toast(`新發現：${ITEMS[fresh.t][fresh.r][0]} ${ITEMS[fresh.t][fresh.r][1]}（金幣 +4%）`); drawCodex(); }
+  const col = RAR[c.rar].c, count = 10 + c.rar * 26;
+  for (let i = 0; i < count && parts.length < 320; i++) {
+    const a = rand(-Math.PI, 0), v = rand(120, 300 + c.rar * 90);
+    parts.push({ x:450, y:280, vx:Math.cos(a) * v, vy:Math.sin(a) * v, life:rand(.6, 1.3), c:Math.random() < .5 ? col : '#f2c14e', s:rand(2, 5) });
+  }
+  if (c.rar >= 3) { flash = calm ? 0 : .3 + (c.rar - 3) * .2; shake = calm ? 0 : 8 + c.rar * 4; }
+  sndOpen(c.rar);
+}
+function finishReveal() {
+  const c = chest;
+  if (c.last) {
+    S.ended = true; S.tier = Math.min(5, S.unlocked); paused = true;
+    $('overlay').classList.add('on'); drawTiers(); save(); newChest(); return;
+  }
+  if (Math.random() < nestP() && chain < 12) { chain++; newChest(true); toast(chain > 1 ? `箱中箱 ×${chain}！` : '箱中箱！裡面還有一箱'); }
+  else { chain = 0; newChest(false); }
+}
+function hitChest(dmg, manual) {
+  if (paused) return;
+  const c = chest;
+  if (c.phase === 'idle') {
+    c.hp -= dmg;
+    if (manual) { shake = Math.max(shake, calm ? 0 : 3); c.squash = 1; sndHit(); }
+    if (c.hp <= 0) { c.hp = 0; open(); }
+  } else if (c.phase === 'reveal' && manual && c.burst && c.time > c.dur + .08) c.time = c.dur + c.hold;
+}
+function startMimic(c) {
+  c.phase = 'mimic';
+  mimic = { x:450, y:300, vx:rand(-1, 1) > 0 ? 260 : -260, vy:220, life:3.2, hp:3 };
+  toast('寶箱怪！快打牠三下，金幣 ×8');
+  sndMimic();
+}
+function clickAt(x, y) {
+  if (paused) return;
+  if (mimic) {
+    if ((x - mimic.x) ** 2 + (y - mimic.y) ** 2 < 75 ** 2) {
+      mimic.hp--; sndHit(); shake = calm ? 0 : 4;
+      if (mimic.hp <= 0) {
+        const c = chest; c.total = baseOf(c.t) * 8 * 4 * coinMult(); S.coins += c.total;
+        for (let i = 0; i < 40; i++) { const a = rand(0, 6.28), v = rand(80, 320); parts.push({ x:mimic.x, y:mimic.y, vx:Math.cos(a) * v, vy:Math.sin(a) * v, life:rand(.5, 1.1), c:'#f2c14e', s:rand(2, 5) }); }
+        toast(`打倒寶箱怪！+${fmt(c.total)}`); mimic = null; sndOpen(3); newChest(false);
+      }
+    }
+    return;
+  }
+  hitChest(click(), true);
+}
+function step(dt) {
+  if (paused) return;
+  armPhase += dt * (1 + Math.min(4, S.up.arm * .3));
+  const c = chest;
+  if (mimic) {
+    mimic.life -= dt; mimic.x += mimic.vx * dt; mimic.y += mimic.vy * dt;
+    if (mimic.x < 90 || mimic.x > 810) { mimic.vx *= -1; mimic.x = Math.max(90, Math.min(810, mimic.x)); }
+    if (mimic.y < 110 || mimic.y > 440) { mimic.vy *= -1; mimic.y = Math.max(110, Math.min(440, mimic.y)); }
+    if (mimic.life <= 0) { mimic = null; toast('寶箱怪跑掉了'); newChest(false); }
+    return;
+  }
+  if (c.phase === 'idle') { if (S.up.arm) hitChest(dps() * dt, false); }
+  else if (c.phase === 'reveal') {
+    c.time += dt;
+    if (!c.burst && c.time >= c.dur) burst();
+    if (c.burst && c.time >= c.dur + c.hold) finishReveal();
+  }
+}
+
+// 繪圖
+function drawVault() {
+  const g = ctx.createRadialGradient(450, 300, 40, 450, 300, 560);
+  g.addColorStop(0, '#2d4f48'); g.addColorStop(1, '#0c1a18');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#16302b'; ctx.fillRect(0, 420, W, 100);
+  ctx.strokeStyle = 'rgba(255,255,255,.05)'; ctx.lineWidth = 2;
+  for (let x = 0; x < W; x += 90) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 420); ctx.stroke(); }
+  for (let y = 60; y < 420; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(450, 438, 190, 24, 0, 0, 7); ctx.fill();
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function drawChest(x, y, s, T, lid, frac) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  ctx.fillStyle = T.body; rr(-120, -40, 240, 120, 10); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,.14)'; ctx.fillRect(-120, 40, 240, 40);
+  ctx.fillStyle = T.band; ctx.fillRect(-92, -40, 26, 120); ctx.fillRect(66, -40, 26, 120);
+  if (lid > 0) { ctx.fillStyle = '#0a0f0e'; ctx.fillRect(-112, -46, 224, 18); }
+  ctx.save(); ctx.translate(0, -40 - lid * 44); ctx.transform(1, 0, 0, 1 - lid * .55, 0, 0);
+  ctx.fillStyle = T.body; ctx.beginPath(); ctx.moveTo(-124, 0); ctx.lineTo(-124, -36); ctx.quadraticCurveTo(0, -100, 124, -36); ctx.lineTo(124, 0); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = T.band; ctx.beginPath(); ctx.moveTo(-92, 0); ctx.lineTo(-92, -53); ctx.lineTo(-66, -60); ctx.lineTo(-66, 0); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(92, 0); ctx.lineTo(92, -53); ctx.lineTo(66, -60); ctx.lineTo(66, 0); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  if (lid === 0) {
+    ctx.fillStyle = T.lock; rr(-22, -56, 44, 50, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.beginPath(); ctx.arc(0, -36, 7, 0, 7); ctx.fill(); ctx.fillRect(-3, -36, 6, 16);
+    const dmg = 1 - frac;
+    ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    const cr = [[-60, 0, -20, 34, 8, 60], [50, -20, 20, 12, 42, 56], [-110, 30, -74, 12, -50, 62], [100, 14, 60, 40, 110, 70]];
+    cr.forEach((l, i) => { if (dmg > .15 + i * .2) { ctx.beginPath(); ctx.moveTo(l[0], l[1]); ctx.lineTo(l[2], l[3]); ctx.lineTo(l[4], l[5]); ctx.stroke(); } });
+  }
+  ctx.restore();
+}
+function drawBeam(col, a) {
+  ctx.save(); ctx.globalAlpha = a; ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createLinearGradient(0, 280, 0, 0);
+  g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(350, 300); ctx.lineTo(140, 0); ctx.lineTo(760, 0); ctx.lineTo(550, 300); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function drawArms(c) {
+  const n = Math.min(10, S.up.arm);
+  ctx.font = '30px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let i = 0; i < n; i++) {
+    const a = Math.PI * (1 + (i + .5) / n), bob = c.phase === 'idle' ? Math.sin(armPhase * 8 + i) * 12 : 0;
+    ctx.fillText('🔨', 450 + Math.cos(a) * (215 + bob), 330 + Math.sin(a) * (175 + bob));
+  }
+}
+function draw(dt, now) {
+  ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
+  const sx = shake ? rand(-shake, shake) : 0, sy = shake ? rand(-shake, shake) : 0;
+  shake = Math.max(0, shake - dt * 40);
+  ctx.save(); ctx.translate(sx, sy);
+  drawVault();
+  const c = chest, T = TIERS[c.t];
+  c.squash = Math.max(0, (c.squash || 0) - dt * 8);
+  if (mimic) {
+    ctx.font = '24px "Microsoft JhengHei",sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd86e';
+    ctx.fillText(`打牠！ ${Math.ceil(mimic.life)} 秒`, 450, 50);
+    drawChest(mimic.x, mimic.y, .6, T, .35, 1);
+    ctx.fillStyle = '#fff'; [-24, 24].forEach(o => { ctx.beginPath(); ctx.arc(mimic.x + o, mimic.y - 42, 10, 0, 7); ctx.fill(); });
+    ctx.fillStyle = '#c0203a'; [-24, 24].forEach(o => { ctx.beginPath(); ctx.arc(mimic.x + o, mimic.y - 42, 5, 0, 7); ctx.fill(); });
+    ctx.fillStyle = '#fff'; for (let i = -3; i <= 3; i++) { ctx.beginPath(); ctx.moveTo(mimic.x + i * 14 - 7, mimic.y - 26); ctx.lineTo(mimic.x + i * 14 + 7, mimic.y - 26); ctx.lineTo(mimic.x + i * 14, mimic.y - 12); ctx.fill(); }
+  } else if (c.phase === 'reveal') {
+    const p = Math.min(1, c.time / Math.max(.01, c.dur));
+    const rung = Math.min(c.rar, Math.floor(p * (c.rar + 1)));
+    const col = RAR[c.burst ? c.rar : rung].c;
+    const wobble = c.burst ? 0 : (calm ? 0 : Math.sin(now / 28) * (4 + p * 9));
+    drawBeam(col, c.burst ? .75 : .15 + p * .4);
+    drawChest(450 + wobble, 340, 1 + (c.burst ? 0 : p * .05), T, c.burst ? 1 : 0, 0);
+    if (c.burst) {
+      const k = Math.min(1, (c.time - c.dur) / .18), d = c.drops.reduce((a, b) => b.r > a.r ? b : a), yy = 260 - k * 90;
+      if (c.last) {
+        ctx.font = '76px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText('📝', 450, yy);
+      } else {
+        ctx.font = (60 + k * 30) + 'px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(ITEMS[d.t][d.r][0], 450, yy);
+        ctx.font = '700 25px "Microsoft JhengHei",sans-serif'; ctx.fillStyle = col;
+        ctx.fillText(`【${RAR[d.r].n}】${ITEMS[d.t][d.r][1]}`, 450, yy - 72);
+        ctx.font = '700 22px "Microsoft JhengHei",sans-serif'; ctx.fillStyle = '#f2c14e';
+        ctx.fillText(`+${fmt(c.total)}` + (c.drops.length > 1 ? `（${c.drops.length} 件）` : ''), 450, yy + 66);
+      }
+    }
+  } else {
+    const q = c.squash || 0;
+    drawChest(450, 340 + q * 5, 1 + q * .05, T, 0, c.hp / c.max);
+    ctx.fillStyle = 'rgba(0,0,0,.45)'; rr(330, 462, 240, 14, 7); ctx.fill();
+    ctx.fillStyle = RAR[0].c; rr(330, 462, 240 * c.hp / c.max, 14, 7); ctx.fill();
+    ctx.font = '15px "Microsoft JhengHei",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#f4ead2';
+    ctx.fillText(`${T.n}　${fmt(Math.ceil(c.hp))} / ${fmt(c.max)}`, 450, 495);
+  }
+  if (!mimic) drawArms(c);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i]; p.life -= dt; if (p.life <= 0) { parts.splice(i, 1); continue; }
+    p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 520 * dt;
+    ctx.globalAlpha = Math.min(1, p.life * 2); ctx.fillStyle = p.c; ctx.fillRect(p.x, p.y, p.s, p.s);
+  }
+  ctx.globalAlpha = 1; ctx.restore();
+  if (flash > 0) { ctx.fillStyle = `rgba(255,255,255,${Math.min(.8, flash)})`; ctx.fillRect(0, 0, W, H); flash -= dt * 1.6; }
+}
+
+let last = performance.now(), uiT = 0, saveT = 0;
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  step(dt); draw(dt, now);
+  uiT += dt; if (uiT > .12) { uiT = 0; updateUI(); }
+  saveT += dt; if (saveT > 5) { saveT = 0; save(); }
+  requestAnimationFrame(frame);
+}
+
+// 介面
+const btns = {}, tierBtns = [];
+UPS.forEach(u => {
+  const b = document.createElement('button'); b.className = 'item';
+  b.innerHTML = '<span class="n"></span><span class="c"></span><span class="d"></span>';
+  b.onclick = () => buy(u); $('list').appendChild(b); btns[u.id] = b;
+});
+TIERS.forEach((T, i) => {
+  const b = document.createElement('button'); b.className = 'tier';
+  b.onclick = () => tierClick(i); $('tiers').appendChild(b); tierBtns.push(b);
+});
+function buy(u) {
+  if (S.up[u.id] >= u.max) return;
+  const c = costOf(u); if (S.coins < c) return;
+  S.coins -= c; S.up[u.id]++; sndBuy(); updateUI();
+}
+function tierClick(i) {
+  if (TIERS[i].last && S.ended) return;
+  if (i <= S.unlocked) { if (i !== S.tier && chest.phase === 'idle' && !mimic) { S.tier = i; newChest(false); drawTiers(); } else if (i !== S.tier) { S.tier = i; drawTiers(); } return; }
+  if (i === S.unlocked + 1 && S.coins >= TIERS[i].cost) { S.coins -= TIERS[i].cost; S.unlocked = i; S.tier = i; if (chest.phase === 'idle' && !mimic) newChest(false); sndBuy(); drawTiers(); }
+}
+function drawTiers() {
+  TIERS.forEach((T, i) => {
+    const b = tierBtns[i];
+    b.textContent = i <= S.unlocked ? (T.last && S.ended ? `${T.n} ✓` : T.n) : i === S.unlocked + 1 ? `解鎖${T.n} 🪙${fmt(T.cost)}` : '🔒';
+    b.hidden = i > S.unlocked + 2;
+    b.classList.toggle('on', i === S.tier);
+    b.classList.toggle('off', i > S.unlocked && (i !== S.unlocked + 1 || S.coins < T.cost));
+  });
+}
+function updateUI() {
+  $('coins').textContent = '🪙 ' + fmt(S.coins);
+  $('opened').textContent = `已開 ${fmt(S.opened)} 箱`;
+  $('ptext').textContent = `${S.pity} / ${pityMax()}`;
+  document.querySelector('#pbar i').style.width = Math.min(100, 100 * S.pity / pityMax()) + '%';
+  UPS.forEach(u => {
+    const b = btns[u.id], l = S.up[u.id], full = l >= u.max, c = costOf(u);
+    b.querySelector('.n').textContent = `${u.n}　${u.fx(l)}`;
+    b.querySelector('.c').textContent = full ? '已滿' : '🪙 ' + fmt(c);
+    b.querySelector('.d').textContent = u.d;
+    b.classList.toggle('off', full || S.coins < c);
+  });
+  drawTiers();
+}
+function drawCodex() {
+  const g = $('grid');
+  let h = '<span></span>' + RAR.map(r => `<span style="color:${r.c};text-align:center">${r.n}</span>`).join('');
+  ITEMS.forEach((row, t) => {
+    h += `<span class="lab">${TIERS[t].n}</span>`;
+    row.forEach((it, r) => {
+      const has = S.found[t + '-' + r];
+      h += `<div class="slot" style="${has ? `border-color:${RAR[r].c}` : ''}">` + (has ? `<b>${it[0]}</b><span>${it[1]}</span>` : '<b style="opacity:.3">？</b>') + '</div>';
+    });
+  });
+  g.innerHTML = h;
+  $('cinfo').textContent = `${foundCount()} / 36・每件金幣 +4%，集滿一排幸運 +10%`;
+}
+let toastT;
+function toast(t) { const e = $('toast'); e.textContent = t; e.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => e.classList.remove('on'), 2000); }
+$('cb').onclick = () => { $('overlay').classList.remove('on'); paused = false; };
+
+canvas.addEventListener('pointerdown', e => {
+  initAudio();
+  const r = canvas.getBoundingClientRect();
+  clickAt((e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H);
+});
+window.addEventListener('keydown', e => {
+  if (e.code !== 'Space' || e.repeat || e.target.tagName === 'BUTTON') return;
+  e.preventDefault(); initAudio();
+  if (mimic) clickAt(mimic.x, mimic.y); else clickAt(450, 340);
+});
+
+// 聲音
+let AC;
+function initAudio() { if (AC) return; const C = window.AudioContext || window.webkitAudioContext; if (C) AC = new C(); }
+function tone(f, d, v, type = 'triangle', delay = 0) {
+  if (!AC || muted) return;
+  const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime + delay;
+  o.type = type; o.frequency.value = f;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + .01); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+  o.connect(g).connect(AC.destination); o.start(t); o.stop(t + d + .02);
+}
+const SCALE_N = [392, 494, 587, 698, 880, 1175];
+const sndHit = () => tone(rand(130, 170), .08, .16, 'square');
+const sndBuy = () => tone(740, .1, .1);
+const sndMimic = () => { tone(180, .25, .16, 'sawtooth'); tone(140, .3, .16, 'sawtooth', .12); };
+const rising = r => { for (let i = 0; i <= r; i++) tone(SCALE_N[i], .16, .1, 'triangle', i * .18 * (r / Math.max(1, r))); };
+function sndOpen(r) { tone(SCALE_N[r] * 2, .5 + r * .1, .13); if (r >= 3) tone(SCALE_N[r] * 3, .7, .08, 'sine', .08); }
+
+// 存檔
+function save() { try { localStorage.setItem(SAVE, JSON.stringify(S)); } catch (e) {} }
+function load() { try { const d = JSON.parse(localStorage.getItem(SAVE)); if (d) S = { ...S, ...d, up:{ ...S.up, ...d.up } }; } catch (e) {} }
+window.addEventListener('beforeunload', save);
+$('mute').onclick = () => { muted = !muted; $('mute').textContent = '聲音：' + (muted ? '關' : '開'); };
+let armed = false, armT;
+$('reset').onclick = () => {
+  const b = $('reset');
+  if (!armed) { armed = true; b.textContent = '清除進度？再按一次'; armT = setTimeout(() => { armed = false; b.textContent = '重新開始'; }, 3000); return; }
+  clearTimeout(armT); armed = false; b.textContent = '重新開始';
+  UPS.forEach(u => S.up[u.id] = 0);
+  Object.assign(S, { coins:0, tier:0, unlocked:0, found:{}, pity:0, opened:0, ended:false });
+  mimic = null; parts = []; paused = false; chain = 0; $('overlay').classList.remove('on');
+  newChest(false); drawCodex(); drawTiers(); updateUI(); save();
+};
+
+load(); newChest(false); drawCodex(); drawTiers(); updateUI();
+requestAnimationFrame(frame);
+toast('點擊寶箱，或按空白鍵');
+
+})();
+</script>
+</body>
+</html>
