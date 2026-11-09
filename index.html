@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>天荒地毛</title>
+<style>
+  :root { --bg:#f6ead9; --panel:#fffaf1; --ink:#4a3528; --soft:#8c7461; --line:#e6d4bb; --accent:#e0803a; --accent-ink:#fff; --ok:#6fa35b; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--bg); color:var(--ink); font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif; }
+  #app { max-width:1320px; margin:0 auto; padding-block:12px 20px; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:14px; }
+  header { grid-column:1/-1; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  h1 { font-size:24px; margin:0; letter-spacing:2px; }
+  #yarn { font-size:22px; font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums; }
+  .tools { margin-left:auto; display:flex; gap:8px; }
+  .tools button { border:1px solid var(--line); background:var(--panel); color:var(--ink); border-radius:8px; padding:6px 12px; font:inherit; font-size:14px; cursor:pointer; }
+  #stage { position:relative; background:#fff; border-radius:14px; overflow:hidden; border:1px solid var(--line); }
+  canvas { display:block; width:100%; height:auto; touch-action:none; cursor:none; }
+  #hud { padding:10px 14px; background:var(--panel); border-bottom:1px solid var(--line); }
+  #hudtop { display:flex; justify-content:space-between; gap:12px; font-size:15px; margin-bottom:6px; font-variant-numeric:tabular-nums; }
+  #catname { font-weight:700; }
+  #bar { height:10px; border-radius:6px; background:#efe0ca; overflow:hidden; }
+  #bar i { display:block; height:100%; width:0; background:var(--accent); }
+  #shelf { padding:8px 14px; background:var(--panel); border-top:1px solid var(--line); font-size:14px; color:var(--soft); min-height:40px; }
+  #shelf b { font-size:19px; margin-right:3px; }
+  #shop { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:12px; align-self:start; }
+  #shop h2 { font-size:16px; margin:0 0 8px; }
+  .item { width:100%; display:grid; grid-template-columns:1fr auto; gap:1px 8px; text-align:left; border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:10px; padding:8px 10px; margin-bottom:7px; font:inherit; cursor:pointer; }
+  .item:hover:not(.off) { border-color:var(--accent); }
+  .item.off { opacity:.55; cursor:default; }
+  .item .n { font-weight:700; font-size:15px; }
+  .item .c { font-weight:700; color:var(--accent); font-size:14px; font-variant-numeric:tabular-nums; }
+  .item .d { grid-column:1/-1; color:var(--soft); font-size:12.5px; }
+  #overlay { position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(74,53,40,.42); padding:16px; }
+  #overlay.on { display:flex; }
+  #card { background:var(--panel); border-radius:16px; padding:22px 26px; max-width:420px; text-align:center; }
+  #card h3 { margin:0 0 8px; font-size:22px; }
+  #card p { margin:0 0 16px; color:var(--soft); line-height:1.6; }
+  #card button { border:0; background:var(--accent); color:var(--accent-ink); font:inherit; font-weight:700; font-size:16px; padding:10px 22px; border-radius:10px; cursor:pointer; }
+  #toast { position:absolute; top:12px; left:50%; transform:translateX(-50%); background:rgba(74,53,40,.9); color:#fff; padding:7px 14px; border-radius:20px; font-size:14px; opacity:0; transition:opacity .25s; pointer-events:none; white-space:nowrap; }
+  #toast.on { opacity:1; }
+  @media (max-width:860px) { #app { grid-template-columns:minmax(0,1fr); } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>天荒地毛</h1>
+    <div id="yarn">🧶 0</div>
+    <div class="tools"><button id="mute">聲音：開</button><button id="reset">重新開始</button></div>
+  </header>
+  <main>
+    <div id="stage">
+      <div id="hud">
+        <div id="hudtop"><span id="catname"></span><span id="left"></span></div>
+        <div id="bar"><i></i></div>
+      </div>
+      <div style="position:relative">
+        <canvas id="c" aria-label="用游標或手指在貓身上來回梳毛"></canvas>
+        <div id="toast"></div>
+        <div id="overlay"><div id="card"><h3 id="ct"></h3><p id="cp"></p><button id="cb"></button></div></div>
+      </div>
+      <div id="shelf"></div>
+    </div>
+  </main>
+  <aside id="shop"><h2>梳毛用品店</h2><div id="list"></div></aside>
+</div>
+<script>
+(() => {
+'use strict';
+const W = 960, H = 620, CELL = 8, SAVE_KEY = 'tianhuang-fur-v1';
+const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+const SCALE = Math.min(2, window.devicePixelRatio || 1);
+canvas.width = W * SCALE; canvas.height = H * SCALE;
+const $ = id => document.getElementById(id);
+const rand = (a, b) => a + Math.random() * (b - a);
+
+const CATS = [
+  { name:'麻糬', size:'普通大小的橘貓', total:7e3, base:'#e9a25e', ear:'#f3b9a0', groups:[['#d98a44','#eda75f','#f7c489']] },
+  { name:'芝麻', size:'要踩板凳才梳得到', total:8e5, base:'#3f3a3a', ear:'#d9a0a0', groups:[['#2e2a2b','#454041','#5c5657'],['#d8d2c8','#f1ece3','#ffffff']] },
+  { name:'奶茶', size:'家門已經塞不下', total:3.2e7, base:'#efe2cf', ear:'#efb5ad', groups:[['#d8cdbc','#f3eadb','#ffffff'],['#c47a3c','#dc964f','#efb574'],['#3e3634','#544a47','#6d625e']] },
+  { name:'灰灰', size:'氣象局開始播報', total:1.3e9, base:'#8f96a3', ear:'#d8aeb6', groups:[['#7b828f','#969dab','#b6bcc7']] },
+  { name:'銀河', size:'從太空看得到', total:5e10, base:'#3c3a6e', ear:'#c9a4dc', groups:[['#2f2c63','#4a468c','#6b67b5'],['#7a5fb0','#a585d8','#cfb6f2']] },
+];
+const ITEMS = ['🧦','🔑','📺','🥄','🪀','🎧','🧸','👓','🍙','📮','🪥','🧤','⏰','🪙','🚲'];
+const UPS = [
+  { id:'power', n:'加硬刷毛', d:'每次梳掉更多毛', base:8, g:1.2, max:150, fx:l=>`強度 ${fmt(1.3**l)}` },
+  { id:'size', n:'加寬刷頭', d:'一次梳更大片', base:40, g:3.5, max:8, fx:l=>`寬度 ${(14+5*l)*2}` },
+  { id:'value', n:'手工紡毛機', d:'每根毛換更多毛線', base:80, g:2.6, max:40, fx:l=>`價值 ×${fmt(1.15**l)}` },
+  { id:'kitten', n:'小貓打工仔', d:'自己找毛來舔', base:50, g:1.7, max:20, fx:l=>`${l} 隻` },
+  { id:'snack', n:'肉泥獎金', d:'所有幫手效率 +20%', base:500, g:3, max:30, fx:l=>`效率 ×${fmt(1.2**l)}` },
+  { id:'roomba', n:'吸毛機器人', d:'到處亂撞順便吸毛', base:1500, g:2.4, max:8, fx:l=>`${l} 台` },
+  { id:'gantry', n:'巨型梳毛軌道', d:'整排掃過貓咪', base:30000, g:3, max:5, fx:l=>`${l} 座` },
+];
+
+let S = { cat:0, yarn:0, up:{}, found:[], items:null, cells:null };
+UPS.forEach(u => S.up[u.id] = 0);
+let cells = [], alive = [], grid = new Map(), catCfg, furTotal = 0, sprites = [];
+let kittens = [], roombas = [], gantries = [], parts = [];
+let pointer = { x:W/2, y:H/2, inside:false, lastX:null, lastY:null };
+let paused = false, muted = false, heartT = 0, brushAmt = 0;
+
+function fmt(n) {
+  if (n < 100 && n % 1 !== 0) return n.toFixed(n < 10 ? 2 : 1);
+  if (n < 1e4) return Math.floor(n).toLocaleString('en-US');
+  if (n < 1e8) return (n / 1e4).toFixed(1) + ' 萬';
+  if (n < 1e12) return (n / 1e8).toFixed(2) + ' 億';
+  if (n < 1e16) return (n / 1e12).toFixed(2) + ' 兆';
+  return n.toExponential(2);
+}
+const power = () => 1.3 ** S.up.power;
+const radius = () => 14 + 5 * S.up.size;
+const helper = () => 1.2 ** S.up.snack;
+const value = () => (1.15 ** S.up.value) * (1 + 0.05 * S.found.length);
+const reward = i => 300 * 7 ** i;
+const costOf = u => Math.ceil(u.base * u.g ** S.up[u.id]);
+function config(i) {
+  if (i < CATS.length) return CATS[i];
+  const c = CATS[i % CATS.length];
+  return { ...c, name:`第 ${i + 1} 隻貓`, size:'牠們有增無減', total:5e10 * 40 ** (i - CATS.length + 1) };
+}
+
+// 貓咪形狀
+const body = new Path2D(); body.ellipse(530, 420, 320, 172, 0, 0, Math.PI * 2);
+const head = new Path2D(); head.arc(235, 300, 118, 0, Math.PI * 2);
+const earL = new Path2D('M140 240 L132 128 L222 192 Z');
+const earR = new Path2D('M250 192 L338 128 L332 240 Z');
+const tail = new Path2D('M825 470 C 930 450, 925 310, 860 280');
+const outline = new Path2D(); [body, head, earL, earR].forEach(p => outline.addPath(p));
+const probe = document.createElement('canvas').getContext('2d');
+probe.lineJoin = 'round'; probe.lineCap = 'round';
+function inCat(x, y) { probe.lineWidth = 46; return probe.isPointInPath(outline, x, y) || probe.isPointInStroke(outline, x, y) || (probe.lineWidth = 86, probe.isPointInStroke(tail, x, y)); }
+function inFace(x, y) { return ((x - 235) / 80) ** 2 + ((y - 318) / 58) ** 2 < 1; }
+
+function makeSprites(cfg) {
+  sprites = cfg.groups.map(shades => {
+    const set = [];
+    for (let a = 0; a < 16; a++) {
+      const c = document.createElement('canvas'); c.width = c.height = 88;
+      const g = c.getContext('2d'); g.scale(2, 2); g.translate(22, 22); g.lineCap = 'round';
+      const ang = a / 16 * Math.PI * 2;
+      for (let i = 0; i < 9; i++) {
+        const t = ang + rand(-.55, .55), len = rand(10, 19), sx = rand(-4, 4), sy = rand(-4, 4);
+        g.strokeStyle = shades[Math.floor(rand(0, 3))]; g.lineWidth = rand(1.5, 3);
+        g.beginPath(); g.moveTo(sx, sy);
+        g.quadraticCurveTo(sx + Math.cos(t) * len * .6 + rand(-3, 3), sy + Math.sin(t) * len * .6 + rand(-3, 3), sx + Math.cos(t) * len, sy + Math.sin(t) * len);
+        g.stroke();
+      }
+      set.push(c);
+    }
+    return set;
+  });
+}
+function buildCat(restore) {
+  catCfg = config(S.cat); makeSprites(catCfg);
+  cells = []; alive = []; grid = new Map();
+  for (let y = 0; y < H; y += CELL) for (let x = 0; x < W; x += CELL) {
+    const cx = x + CELL / 2, cy = y + CELL / 2;
+    if (!inCat(cx, cy) || inFace(cx, cy)) continue;
+    const onHead = (cx - 235) ** 2 + (cy - 300) ** 2 < 150 ** 2;
+    const dx = cx - (onHead ? 235 : 530), dy = (cy - (onHead ? 300 : 300)) + (onHead ? 0 : 120);
+    const flow = Math.atan2(dy, dx) + 1.1 * Math.sin(cx * .031 + cy * .019) + .7 * Math.cos(cy * .043 - cx * .012) + rand(-.45, .45);
+    const a = ((Math.round(flow / (Math.PI * 2) * 16) % 16) + 16) % 16;
+    const n = Math.sin(cx * .017) + Math.cos(cy * .021) + Math.sin((cx + cy) * .009);
+    const group = Math.floor(Math.abs(n * 3)) % catCfg.groups.length;
+    const c = { x:cx, y:cy, h:1, max:1, a, group, s:rand(.9, 1.15), i:-1, item:null, gx:x / CELL, gy:y / CELL, id:cells.length };
+    cells.push(c); grid.set(c.gx + c.gy * 1000, c);
+  }
+  furTotal = catCfg.total;
+  const per = furTotal / cells.length;
+  cells.forEach((c, k) => {
+    c.max = per;
+    c.h = per;
+    if (restore && S.cells) c.h = per * parseInt(S.cells[k] || 'z', 36) / 35;
+    if (c.h > 0) { c.i = alive.length; alive.push(c); }
+  });
+  if (!restore || !S.items) {
+    S.items = []; const base = S.cat * 3;
+    for (let i = 0; i < 3; i++) if (base + i < ITEMS.length) {
+      S.items.push({ emoji:ITEMS[base + i], cell:Math.floor(rand(0, cells.length)) });
+    }
+  }
+  S.items.forEach(it => { if (cells[it.cell]) cells[it.cell].item = it.emoji; });
+  syncHelpers();
+}
+function syncHelpers() {
+  while (kittens.length < S.up.kitten) kittens.push({ x:rand(100, 860), y:rand(200, 580), t:null, flip:1, ph:rand(0, 6) });
+  while (roombas.length < S.up.roomba) { const a = rand(0, 6.28); roombas.push({ x:rand(300, 700), y:rand(300, 500), vx:Math.cos(a) * 140, vy:Math.sin(a) * 140 }); }
+  while (gantries.length < S.up.gantry) gantries.push({ x:rand(80, 880), v:Math.random() < .5 ? 190 : -190 });
+}
+
+// 梳毛核心
+function killCell(c) {
+  const last = alive.pop();
+  if (last !== c) { alive[c.i] = last; last.i = c.i; }
+  c.i = -1;
+  if (c.item) {
+    const e = c.item; c.item = null; S.found.push(e);
+    toast(`在毛裡找到 ${e}！毛線永久 +5%`); chime(); drawShelf();
+    parts.push({ x:c.x, y:c.y, vx:0, vy:-60, life:1.8, max:1.8, emoji:e });
+  }
+  if (alive.length === 0) finishCat();
+}
+function hit(x, y, r, amt) {
+  const gx0 = Math.floor((x - r) / CELL), gx1 = Math.floor((x + r) / CELL);
+  const gy0 = Math.floor((y - r) / CELL), gy1 = Math.floor((y + r) / CELL);
+  let got = 0;
+  for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
+    const c = grid.get(gx + gy * 1000);
+    if (!c || c.i < 0) continue;
+    if ((c.x - x) ** 2 + (c.y - y) ** 2 > r * r) continue;
+    got += damage(c, amt);
+  }
+  return got;
+}
+function damage(c, amt) {
+  const took = Math.min(c.h, amt);
+  c.h -= took; S.yarn += took / c.max / cells.length * reward(S.cat) * value();
+  if (parts.length < 240 && Math.random() < .12) spawnFluff(c);
+  if (c.h <= 1e-9) { c.h = 0; if (parts.length < 240) spawnFluff(c); killCell(c); }
+  return took;
+}
+function spawnFluff(c) {
+  const shades = catCfg.groups[c.group];
+  parts.push({ x:c.x, y:c.y, vx:rand(-50, 50), vy:rand(-110, -20), life:rand(.5, 1.1), max:1, col:shades[Math.floor(rand(0, 3))], rot:rand(0, 6) });
+}
+function brushTo(x, y) {
+  if (paused) return;
+  if (pointer.lastX == null) { pointer.lastX = x; pointer.lastY = y; return; }
+  const dx = x - pointer.lastX, dy = y - pointer.lastY;
+  const dist = Math.min(260, Math.hypot(dx, dy));
+  if (dist < 1) return;
+  const r = radius(), steps = Math.ceil(dist / (r * .5)), P = power();
+  let got = 0;
+  for (let i = 1; i <= steps; i++) got += hit(pointer.lastX + dx * i / steps, pointer.lastY + dy * i / steps, r, P * (dist / steps) / 200);
+  pointer.lastX = x; pointer.lastY = y;
+  if (got > 0) { brushAmt = Math.min(1, brushAmt + dist / 180); if (Math.random() < .03) hearts(); }
+}
+function hearts() { parts.push({ x:rand(200, 280), y:190, vx:rand(-20, 20), vy:-50, life:1.3, max:1.3, emoji:'💗' }); }
+
+function step(dt) {
+  if (paused) return;
+  const P = power(), K = helper();
+  for (const k of kittens) {
+    k.ph += dt * 8;
+    if (!k.t || k.t.i < 0) {
+      k.t = null; let best = Infinity;
+      for (let i = 0; i < 8 && alive.length; i++) {
+        const c = alive[Math.floor(Math.random() * alive.length)];
+        const d = (c.x - k.x) ** 2 + (c.y - k.y) ** 2;
+        if (d < best) { best = d; k.t = c; }
+      }
+    }
+    if (!k.t) continue;
+    const dx = k.t.x - k.x, dy = k.t.y - k.y, d = Math.hypot(dx, dy);
+    if (d > 6) { k.x += dx / d * 95 * dt; k.y += dy / d * 95 * dt; k.flip = dx < 0 ? -1 : 1; }
+    else hit(k.x, k.y, 15, P * .22 * K * dt);
+    if (paused) return;
+  }
+  for (const r of roombas) {
+    r.x += r.vx * dt; r.y += r.vy * dt;
+    if (r.x < 60 || r.x > 900) { r.vx *= -1; r.x = Math.max(60, Math.min(900, r.x)); }
+    if (r.y < 130 || r.y > 590) { r.vy *= -1; r.y = Math.max(130, Math.min(590, r.y)); }
+    hit(r.x, r.y, 26, P * .4 * K * dt);
+    if (paused) return;
+  }
+  for (const g of gantries) {
+    g.x += g.v * dt;
+    if (g.x < 50 || g.x > 910) { g.v *= -1; g.x = Math.max(50, Math.min(910, g.x)); }
+    const gx0 = Math.floor((g.x - 14) / CELL), gx1 = Math.floor((g.x + 14) / CELL);
+    outer:
+    for (let gx = gx0; gx <= gx1; gx++) for (let gy = 0; gy * CELL < H; gy++) {
+      const c = grid.get(gx + gy * 1000);
+      if (c && c.i >= 0) { damage(c, P * .45 * K * dt); if (paused) break outer; }
+    }
+    if (paused) return;
+  }
+}
+
+function finishCat() {
+  if (paused) return;
+  paused = true; S.cells = null;
+  const bonus = reward(S.cat) * .1 * value();
+  S.yarn += bonus; tada();
+  const last = S.cat === CATS.length - 1;
+  $('ct').textContent = last ? '銀河貓，乾淨了！' : `${catCfg.name} 乾淨了！`;
+  $('cp').textContent = (last ? '你把從太空看得到的貓梳完了，全宇宙都在呼嚕。不過，門外好像又有東西在掉毛……' : '牠舒服地翻了個身。門外傳來更大的呼嚕聲……') + `\n謝禮：🧶 ${fmt(bonus)}`;
+  $('cb').textContent = last ? '繼續梳（無盡模式）' : '開門看看';
+  $('overlay').classList.add('on');
+  S.cat++; S.items = null;
+  save();
+}
+$('cb').onclick = () => {
+  S.items = null; S.cells = null; parts = [];
+  buildCat(false); kittens.forEach(k => k.t = null);
+  paused = false; $('overlay').classList.remove('on'); save(); drawShelf();
+};
+
+// 繪圖
+function drawRoom() {
+  const wall = ctx.createLinearGradient(0, 0, 0, 460);
+  wall.addColorStop(0, '#fbe7c8'); wall.addColorStop(1, '#f3d4ab');
+  ctx.fillStyle = wall; ctx.fillRect(0, 0, W, 470);
+  ctx.fillStyle = '#c99668'; ctx.fillRect(0, 470, W, 150);
+  ctx.fillStyle = '#b98658';
+  for (let y = 500; y < H; y += 38) ctx.fillRect(0, y, W, 2);
+  ctx.fillStyle = '#fff6e3'; ctx.fillRect(590, 40, 250, 170);
+  ctx.fillStyle = '#b9e0ee'; ctx.fillRect(600, 50, 230, 150);
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(670, 110, 22, 0, 7); ctx.arc(700, 104, 28, 0, 7); ctx.arc(735, 112, 20, 0, 7); ctx.fill();
+  ctx.fillStyle = '#fff6e3'; ctx.fillRect(712, 50, 6, 150); ctx.fillRect(600, 122, 230, 6);
+  ctx.fillStyle = '#d97b6b'; ctx.beginPath(); ctx.ellipse(510, 570, 420, 42, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#e8a08f'; ctx.beginPath(); ctx.ellipse(510, 570, 370, 30, 0, 0, 7); ctx.fill();
+}
+function drawCatBase() {
+  ctx.fillStyle = catCfg.base;
+  ctx.fill(body); ctx.fill(head); ctx.fill(earL); ctx.fill(earR);
+  ctx.strokeStyle = catCfg.base; ctx.lineWidth = 42; ctx.lineCap = 'round'; ctx.stroke(tail);
+  ctx.fillStyle = catCfg.ear;
+  ctx.beginPath(); ctx.moveTo(158, 226); ctx.lineTo(150, 160); ctx.lineTo(206, 200); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(266, 200); ctx.lineTo(322, 160); ctx.lineTo(316, 226); ctx.fill();
+}
+function drawFur() {
+  for (const c of cells) {
+    if (c.i < 0) continue;
+    const f = c.h / c.max, size = 44 * c.s * (.45 + .55 * f);
+    ctx.drawImage(sprites[c.group][c.a], c.x - size / 2, c.y - size / 2, size, size);
+  }
+}
+function drawFace(t) {
+  const dark = S.cat === 1 || S.cat === 4 ? '#f6e9d8' : '#4a3528';
+  ctx.strokeStyle = dark; ctx.lineWidth = 4.5; ctx.lineCap = 'round';
+  const p = 1 - alive.length / cells.length;
+  const shut = brushAmt > .1 || p > .9;
+  [190, 280].forEach(x => {
+    ctx.beginPath();
+    if (shut) ctx.arc(x, 300, 15, Math.PI * 1.15, Math.PI * 1.85);
+    else if ((t % 4.2) < .14) { ctx.moveTo(x - 13, 296); ctx.lineTo(x + 13, 296); }
+    else { ctx.fillStyle = dark; ctx.arc(x, 296, 9, 0, 7); ctx.fill(); }
+    ctx.stroke();
+  });
+  ctx.fillStyle = '#e88f8f'; ctx.beginPath(); ctx.moveTo(226, 324); ctx.lineTo(244, 324); ctx.lineTo(235, 335); ctx.fill();
+  ctx.lineWidth = 3.5;
+  ctx.beginPath(); ctx.arc(224, 338, 11, .2, Math.PI - .4); ctx.arc(246, 338, 11, .4, Math.PI - .2); ctx.stroke();
+  ctx.lineWidth = 2;
+  [[160, 320, 108, 310], [160, 334, 106, 340], [310, 320, 362, 310], [310, 334, 364, 340]].forEach(l => { ctx.beginPath(); ctx.moveTo(l[0], l[1]); ctx.lineTo(l[2], l[3]); ctx.stroke(); });
+}
+function drawHelpers() {
+  for (const g of gantries) {
+    ctx.fillStyle = '#9c6b42'; ctx.fillRect(g.x - 5, 92, 10, 505);
+    ctx.fillStyle = '#7f5533'; for (let y = 104; y < 590; y += 16) ctx.fillRect(g.x - 15, y, 30, 4);
+    ctx.fillStyle = '#6a4629'; ctx.fillRect(g.x - 22, 82, 44, 12);
+  }
+  for (const r of roombas) {
+    ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(r.x, r.y + 12, 26, 9, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#39414e'; ctx.beginPath(); ctx.arc(r.x, r.y, 23, 0, 7); ctx.fill();
+    ctx.fillStyle = '#596375'; ctx.beginPath(); ctx.arc(r.x, r.y, 15, 0, 7); ctx.fill();
+    ctx.fillStyle = '#7fe08a'; ctx.beginPath(); ctx.arc(r.x, r.y, 4, 0, 7); ctx.fill();
+  }
+  for (const k of kittens) {
+    const by = Math.sin(k.ph) * 2;
+    ctx.save(); ctx.translate(k.x, k.y + by); ctx.scale(k.flip, 1);
+    ctx.fillStyle = '#c9743c';
+    ctx.beginPath(); ctx.ellipse(-3, 3, 14, 9, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(11, -5, 9, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(4, -9); ctx.lineTo(6, -19); ctx.lineTo(12, -13); ctx.moveTo(12, -13); ctx.lineTo(17, -19); ctx.lineTo(19, -8); ctx.fill();
+    ctx.strokeStyle = '#c9743c'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-15, 2); ctx.quadraticCurveTo(-24, -3 + by, -21, -12); ctx.stroke();
+    ctx.fillStyle = '#3a2b20'; ctx.fillRect(13, -7, 2, 3);
+    ctx.restore();
+  }
+}
+function drawParts(dt) {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    p.life -= dt; if (p.life <= 0) { parts.splice(i, 1); continue; }
+    p.x += p.vx * dt; p.y += p.vy * dt; if (!p.emoji) { p.vy += 220 * dt; p.rot += dt * 5; }
+    ctx.globalAlpha = Math.min(1, p.life / (p.max * .5));
+    if (p.emoji) { ctx.font = '26px serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#000'; ctx.fillText(p.emoji, p.x, p.y); }
+    else { ctx.strokeStyle = p.col; ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + Math.cos(p.rot) * 9, p.y + Math.sin(p.rot) * 9); ctx.stroke(); }
+  }
+  ctx.globalAlpha = 1;
+}
+function drawBrush() {
+  if (!pointer.inside || paused) return;
+  const r = radius(), { x, y } = pointer;
+  ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.stroke();
+  ctx.strokeStyle = 'rgba(74,53,40,.5)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(x, y, r + 1.5, 0, 7); ctx.stroke();
+  ctx.fillStyle = '#b5764a'; ctx.fillRect(x - r * .8, y - 5, r * 1.6, 8);
+  ctx.fillStyle = '#6a4629'; for (let i = -r * .7; i <= r * .7; i += 5) ctx.fillRect(x + i - .7, y + 3, 1.4, 9);
+}
+
+let lastT = performance.now(), uiT = 0, saveT = 0;
+function frame(now) {
+  const dt = Math.min(.05, (now - lastT) / 1000); lastT = now;
+  step(dt);
+  brushAmt = Math.max(0, brushAmt - dt * 2.4);
+  ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
+  drawRoom(); drawCatBase(); drawFur(); drawFace(now / 1000); drawHelpers(); drawParts(dt); drawBrush();
+  updateAudio();
+  uiT += dt; if (uiT > .12) { uiT = 0; updateUI(); }
+  saveT += dt; if (saveT > 5) { saveT = 0; save(); }
+  requestAnimationFrame(frame);
+}
+
+// 介面
+const btns = {};
+UPS.forEach(u => {
+  const b = document.createElement('button'); b.className = 'item';
+  b.innerHTML = `<span class="n"></span><span class="c"></span><span class="d"></span>`;
+  b.onclick = () => buy(u); $('list').appendChild(b); btns[u.id] = b;
+});
+function buy(u) {
+  if (S.up[u.id] >= u.max) return;
+  const c = costOf(u);
+  if (S.yarn < c) return;
+  S.yarn -= c; S.up[u.id]++; syncHelpers(); blip(); updateUI();
+}
+function updateUI() {
+  $('yarn').textContent = '🧶 ' + fmt(S.yarn);
+  $('catname').textContent = `第 ${paused ? S.cat : S.cat + 1} 隻・${catCfg.name}（${catCfg.size}）`;
+  const remain = alive.reduce((s, c) => s + c.h, 0);
+  $('left').textContent = `還有 ${fmt(Math.max(0, Math.ceil(remain - 1e-6)))} 根毛`;
+  document.querySelector('#bar i').style.width = (100 * (1 - remain / furTotal)) + '%';
+  UPS.forEach(u => {
+    const b = btns[u.id], l = S.up[u.id], full = l >= u.max, c = costOf(u);
+    b.querySelector('.n').textContent = `${u.n}　${u.fx(l)}`;
+    b.querySelector('.c').textContent = full ? '已滿' : '🧶 ' + fmt(c);
+    b.querySelector('.d').textContent = u.d;
+    b.classList.toggle('off', full || S.yarn < c);
+  });
+}
+function drawShelf() {
+  $('shelf').innerHTML = S.found.length ? `毛裡挖到的東西（毛線 +${S.found.length * 5}%）：` + S.found.map(e => `<b>${e}</b>`).join('') : '毛裡藏著別人弄丟的東西，每隻貓有 3 件，找到會永久增加毛線。';
+}
+let toastTimer;
+function toast(t) { const e = $('toast'); e.textContent = t; e.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => e.classList.remove('on'), 2200); }
+
+// 輸入
+function toLocal(e) { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H]; }
+canvas.addEventListener('pointermove', e => {
+  const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+  (events.length ? events : [e]).forEach(ev => { const [x, y] = toLocal(ev); pointer.x = x; pointer.y = y; pointer.inside = true; brushTo(x, y); });
+});
+canvas.addEventListener('pointerdown', e => { initAudio(); const [x, y] = toLocal(e); pointer.lastX = x; pointer.lastY = y; pointer.x = x; pointer.y = y; pointer.inside = true; });
+canvas.addEventListener('pointerleave', () => { pointer.inside = false; pointer.lastX = null; });
+canvas.addEventListener('pointerup', e => { if (e.pointerType !== 'mouse') { pointer.inside = false; pointer.lastX = null; } });
+
+// 聲音
+let AC, brushGain, purrGain;
+function initAudio() {
+  if (AC) return;
+  const Ctor = window.AudioContext || window.webkitAudioContext; if (!Ctor) return;
+  AC = new Ctor();
+  const len = AC.sampleRate * 2, buf = AC.createBuffer(1, len, AC.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
+  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2600; bp.Q.value = .7;
+  brushGain = AC.createGain(); brushGain.gain.value = 0;
+  src.connect(bp).connect(brushGain).connect(AC.destination); src.start();
+  const purr = AC.createOscillator(); purr.type = 'sawtooth'; purr.frequency.value = 27;
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 180;
+  const lfo = AC.createOscillator(); lfo.frequency.value = 2.2;
+  const depth = AC.createGain(); depth.gain.value = .5;
+  const tremolo = AC.createGain(); tremolo.gain.value = .5;
+  purrGain = AC.createGain(); purrGain.gain.value = 0;
+  lfo.connect(depth).connect(tremolo.gain);
+  purr.connect(lp).connect(tremolo).connect(purrGain).connect(AC.destination);
+  purr.start(); lfo.start();
+}
+function updateAudio() {
+  if (!AC) return;
+  const t = AC.currentTime, m = muted ? 0 : 1;
+  brushGain.gain.setTargetAtTime(m * brushAmt * .07, t, .03);
+  purrGain.gain.setTargetAtTime(m * (paused ? .14 : .03 + brushAmt * .09), t, .15);
+}
+function tone(f, d, v, delay = 0) {
+  if (!AC || muted) return;
+  const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime + delay;
+  o.type = 'triangle'; o.frequency.value = f;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + .01); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+  o.connect(g).connect(AC.destination); o.start(t); o.stop(t + d);
+}
+const blip = () => tone(660, .12, .12);
+const chime = () => { tone(784, .3, .12); tone(1175, .4, .12, .1); };
+const tada = () => { [523, 659, 784, 1047].forEach((f, i) => tone(f, .5, .13, i * .12)); };
+
+// 存檔
+function save() {
+  try {
+    const data = { ...S };
+    if (!paused) data.cells = cells.map(c => Math.ceil(c.h / c.max * 35).toString(36)).join('');
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  } catch (e) {}
+}
+function load() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY); if (!raw) return false;
+    const d = JSON.parse(raw);
+    S = { ...S, ...d, up:{ ...S.up, ...d.up } };
+    return true;
+  } catch (e) { return false; }
+}
+window.addEventListener('beforeunload', save);
+$('mute').onclick = () => { muted = !muted; $('mute').textContent = '聲音：' + (muted ? '關' : '開'); };
+let resetArmed = false, resetTimer;$('reset').onclick = () => {  const b = $('reset');  if (!resetArmed) { resetArmed = true; b.textContent = '清除進度？再按一次'; resetTimer = setTimeout(() => { resetArmed = false; b.textContent = '重新開始'; }, 3000); return; }  clearTimeout(resetTimer); resetArmed = false; b.textContent = '重新開始';  UPS.forEach(u => S.up[u.id] = 0);  S.cat = 0; S.yarn = 0; S.found = []; S.items = null; S.cells = null;  kittens = []; roombas = []; gantries = []; parts = []; paused = false;  $('overlay').classList.remove('on');  buildCat(false); drawShelf(); updateUI(); save();};
+
+const restored = load();
+buildCat(restored);
+if (restored && S.cells === null && alive.length) { S.cells = null; }
+drawShelf(); updateUI();
+requestAnimationFrame(frame);
+toast('把游標移到貓身上，來回梳毛吧');
+
+})();
+</script>
+</body>
+</html>
