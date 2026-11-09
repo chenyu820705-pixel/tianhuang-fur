@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>箱中有箱</title>
+<style>
+  /* 版面：左邊是金庫賭桌，右邊是道具舖，下方是圖鑑 */
+  :root { --bg:#10211f; --panel:#1a302c; --panel2:#233d38; --ink:#f4ead2; --soft:#a9b8a6; --line:#35524b; --gold:#f2c14e; --gold-ink:#2b2110; --red:#e4506a; }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  html,body { margin:0; background:var(--bg); color:var(--ink); font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif; }
+  #app { max-width:1320px; margin:0 auto; padding-block:12px 24px; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:14px; }
+  header { grid-column:1/-1; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  h1 { font-size:24px; margin:0; letter-spacing:3px; color:var(--gold); }
+  #coins { font-size:23px; font-weight:700; font-variant-numeric:tabular-nums; }
+  #stats { color:var(--soft); font-size:14px; font-variant-numeric:tabular-nums; }
+  .tools { margin-left:auto; display:flex; gap:8px; }
+  .tools button { border:1px solid var(--line); background:var(--panel); color:var(--ink); border-radius:8px; padding:6px 12px; font:inherit; font-size:14px; cursor:pointer; }
+  main { min-width:0; display:grid; gap:10px; align-content:start; }
+  #tiers { display:flex; flex-wrap:wrap; gap:6px; }
+  .tier { border:1px solid var(--line); background:var(--panel); color:var(--ink); border-radius:8px; padding:6px 11px; font:inherit; font-size:14px; cursor:pointer; font-variant-numeric:tabular-nums; }
+  .tier.on { background:var(--gold); color:var(--gold-ink); border-color:var(--gold); font-weight:700; }
+  .tier.off { opacity:.55; }
+  #stage { position:relative; border-radius:12px; overflow:hidden; border:1px solid var(--line); }
+  canvas { display:block; width:100%; height:auto; }
+  #table { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; display:grid; gap:9px; }
+  #potline { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  #pot { font-size:30px; font-weight:700; color:var(--gold); font-variant-numeric:tabular-nums; }
+  #depth { color:var(--soft); font-size:15px; font-variant-numeric:tabular-nums; }
+  #dangerTop { display:flex; justify-content:space-between; font-size:14px; color:var(--soft); margin-bottom:4px; font-variant-numeric:tabular-nums; }
+  #dangerTop b { color:var(--ink); }
+  #dbar { height:12px; border-radius:7px; background:var(--panel2); overflow:hidden; }
+  #dbar i { display:block; height:100%; width:0; background:var(--red); transition:width .2s; }
+  #stakes { display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-size:14px; color:var(--soft); }
+  #stakes button { border:1px solid var(--line); background:var(--panel2); color:var(--ink); border-radius:8px; padding:6px 12px; font:inherit; cursor:pointer; }
+  #stakes button.on { background:var(--red); border-color:var(--red); color:#fff; font-weight:700; }
+  #stakes button:disabled { opacity:.5; cursor:default; }
+  #coins.hurt { color:var(--red); }
+  #peekline { font-size:15px; min-height:22px; color:var(--soft); }
+  #actions { display:grid; grid-template-columns:1fr 1fr auto; gap:8px; }
+  #actions button { border:0; border-radius:10px; padding:14px 10px; font:inherit; font-size:18px; font-weight:700; cursor:pointer; min-width:0; }
+  #open { background:var(--red); color:#fff; }
+  #bank { background:var(--gold); color:var(--gold-ink); }
+  #peek { background:var(--panel2); color:var(--ink); font-size:15px !important; padding-inline:14px !important; }
+  #actions button:disabled { opacity:.38; cursor:default; }
+  #opts { display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center; font-size:14px; color:var(--soft); }
+  #opts label { display:flex; gap:6px; align-items:center; }
+  #crewDepth { width:120px; accent-color:var(--gold); }
+  #codex { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  #codex h2 { font-size:16px; margin:0 0 8px; }
+  #codex h2 small { color:var(--soft); font-weight:400; font-size:13px; margin-left:6px; }
+  #grid { display:grid; grid-template-columns:62px repeat(6, minmax(0,1fr)); gap:4px; font-size:12px; align-items:center; }
+  #grid .lab { color:var(--soft); }
+  #grid .slot { background:var(--panel2); border:1px solid transparent; border-radius:7px; text-align:center; padding:4px 1px; min-height:48px; min-width:0; }
+  #grid .slot b { display:block; font-size:20px; line-height:1.25; font-weight:400; }
+  #grid .slot span { display:block; font-size:11px; color:var(--soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #shop { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; align-self:start; }
+  #shop h2 { font-size:16px; margin:0 0 8px; }
+  .item { width:100%; display:grid; grid-template-columns:1fr auto; gap:1px 8px; text-align:left; border:1px solid var(--line); background:var(--panel2); color:var(--ink); border-radius:9px; padding:8px 10px; margin-bottom:7px; font:inherit; cursor:pointer; }
+  .item:hover:not(.off) { border-color:var(--gold); }
+  .item.off { opacity:.5; cursor:default; }
+  .item .n { font-weight:700; font-size:15px; }
+  .item .c { font-weight:700; color:var(--gold); font-size:14px; font-variant-numeric:tabular-nums; }
+  .item .d { grid-column:1/-1; color:var(--soft); font-size:12.5px; }
+  #overlay { position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(5,14,12,.72); padding:16px; }
+  #overlay.on { display:flex; }
+  #card { background:var(--panel); border:1px solid var(--gold); border-radius:14px; padding:18px 24px; max-width:430px; text-align:center; }
+  #card h3 { margin:0 0 8px; font-size:22px; color:var(--gold); }
+  #card p { margin:0 0 14px; color:var(--soft); line-height:1.7; }
+  #card button { border:0; background:var(--gold); color:var(--gold-ink); font:inherit; font-weight:700; font-size:16px; padding:10px 22px; border-radius:9px; cursor:pointer; }
+  #toast { position:absolute; bottom:10px; left:50%; transform:translateX(-50%); background:rgba(5,14,12,.88); color:var(--ink); padding:6px 14px; border-radius:18px; font-size:14px; opacity:0; transition:opacity .2s; pointer-events:none; white-space:nowrap; max-width:92%; overflow:hidden; text-overflow:ellipsis; }
+  #toast.on { opacity:1; }
+  button:focus-visible { outline:2px solid var(--gold); outline-offset:2px; }
+  @media (max-width:860px) { #app { grid-template-columns:minmax(0,1fr); } #grid { grid-template-columns:46px repeat(6, minmax(0,1fr)); } #grid .slot span { display:none; } #grid .slot { min-height:36px; } #actions button { font-size:16px; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>箱中有箱</h1>
+    <div id="coins">🪙 0</div>
+    <div id="stats"></div>
+    <div class="tools"><button id="mute">聲音：開</button><button id="reset">重新開始</button></div>
+  </header>
+  <main>
+    <div id="tiers"></div>
+    <div id="stage">
+      <canvas id="c" aria-label="箱子一層一層打開的舞台"></canvas>
+      <div id="toast"></div>
+      <div id="overlay"><div id="card"><h3>最後的箱子，打開了</h3><p>第七層裡沒有金幣，只有一張紙條：<br>「本箱為可回收容器，請依規定分類。」<br>你看著手上的鑰匙，決定繼續賭。</p><button id="cb">繼續開箱</button></div></div>
+    </div>
+    <section id="table">
+      <div id="potline"><span id="pot">準備開箱</span><span id="depth"></span></div>
+      <div><div id="dangerTop"><span>下一層是寶箱怪的機率</span><b id="dtext"></b></div><div id="dbar"><i></i></div></div>
+      <div id="stakes"><span>押上錢包：</span><button data-s="0">不押</button><button data-s="0.25">25%</button><button data-s="0.5">50%</button><button data-s="1">全押</button><span id="stakeInfo"></span></div>
+      <div id="peekline"></div>
+      <div id="actions"><button id="open"></button><button id="bank"></button><button id="peek"></button></div>
+      <div id="opts"><label id="curseWrap" hidden><input type="checkbox" id="curse">詛咒鑰匙（倍率 +25%，危險 +8）</label><label id="crewWrap" hidden>跟班開到第 <input type="range" id="crewDepth" min="1" max="8" value="3"> <b id="crewN">3</b> 層就收手</label><span>快捷鍵：空白鍵開箱、S 收手</span></div>
+    </section>
+    <section id="codex"><h2>圖鑑<small id="cinfo"></small></h2><div id="grid"></div></section>
+  </main>
+  <aside id="shop"><h2>道具舖</h2><div id="list"></div></aside>
+</div>
+<script>
+(() => {
+'use strict';
+const W = 900, H = 400, SAVE = 'chest-gamble-v1';
+const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+const SCALE = Math.min(2, window.devicePixelRatio || 1);
+canvas.width = W * SCALE; canvas.height = H * SCALE;
+const $ = id => document.getElementById(id);
+const rand = (a, b) => a + Math.random() * (b - a);
+const calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const RAR = [
+  { n:'普通', w:55, m:1.25, c:'#cfd6c8' },
+  { n:'優良', w:27, m:1.5, c:'#6fd17a' },
+  { n:'稀有', w:12, m:2, c:'#5aa9f2' },
+  { n:'史詩', w:4.5, m:3, c:'#b77ff0' },
+  { n:'傳說', w:1.2, m:5, c:'#f2a33c' },
+  { n:'神話', w:.6, m:10, c:'#ff5f7e' },
+];
+const TIERS = [
+  { n:'木箱', cost:0, body:'#8a5a33', band:'#5d3a1f', lock:'#c9a24a' },
+  { n:'鐵箱', cost:3600, body:'#6d7a80', band:'#434e54', lock:'#d6dde0' },
+  { n:'銀箱', cost:1.2e5, body:'#b9c4cc', band:'#7f8d97', lock:'#f4f8fb' },
+  { n:'金箱', cost:6e6, body:'#e0ac37', band:'#a8761b', lock:'#fff0b8' },
+  { n:'水晶箱', cost:5e8, body:'#6fd0d8', band:'#3489a0', lock:'#e6fbff' },
+  { n:'星辰箱', cost:3.6e10, body:'#3f3a8c', band:'#25215c', lock:'#ffd86e' },
+  { n:'最後的箱子', cost:3e12, body:'#2a2a2e', band:'#0f0f12', lock:'#ff5f7e', last:true },
+];
+const ITEMS = [
+  [['🪵','木屑'],['🧦','單隻襪'],['🥄','生鏽湯匙'],['🗝️','舊鑰匙'],['🪙','老銅板'],['🧸','會說話的熊']],
+  [['🔩','螺絲'],['🔧','扳手'],['🧲','磁鐵'],['⚙️','永動齒輪'],['🛡️','小圓盾'],['🤖','迷你機器人']],
+  [['🍴','銀叉'],['🔔','銀鈴'],['🪞','魔鏡'],['🌙','月牙'],['🦄','獨角獸'],['👻','銀幽靈']],
+  [['🍯','金蜂蜜'],['🏅','獎牌'],['🎺','金喇叭'],['👑','王冠'],['🐉','小金龍'],['☀️','口袋太陽']],
+  [['💎','碎晶'],['🔮','占卜球'],['🧊','永凍冰'],['🦋','水晶蝶'],['🌈','彩虹罐'],['🪐','小行星環']],
+  [['✨','星塵'],['☄️','彗尾'],['🌌','星雲'],['🛸','幽浮'],['🌠','許願流星'],['🕳️','口袋黑洞']],
+];
+const UPS = [
+  { id:'bet', n:'加大底注', d:'每一趟的起始彩金 ×1.2', base:20, g:1.9, max:60, fx:l=>`×${fmt(1.2**l)}` },
+  { id:'crew', n:'跟班', d:'照你設定的層數自動開箱，分你三成', base:120, g:2.4, max:12, fx:l=>`${l} 位` },
+  { id:'calm', n:'鎮定香氛', d:'越深的層數，危險上升更慢', base:150, g:2.6, max:8, fx:l=>`每層 +${(6-.4*l).toFixed(1)}%` },
+  { id:'insure', n:'保險', d:'被吃掉時保住部分彩金', base:120, g:3, max:6, fx:l=>`保住 ${l*8}%` },
+  { id:'peek', n:'透視鏡', d:'每趟可偷看下一層的結果', base:200, g:8, max:3, fx:l=>`每趟 ${l} 次` },
+  { id:'train', n:'跟班特訓', d:'跟班開箱速度 +18%', base:500, g:3, max:8, fx:l=>`每趟 ${(6*.85**l).toFixed(1)} 秒` },
+  { id:'shield', n:'護身符', d:'每趟擋下寶箱怪一次', base:600, g:10, max:2, fx:l=>`每趟 ${l} 次` },
+  { id:'curse', n:'詛咒鑰匙', d:'解鎖開關：高風險高倍率', base:1000, g:1, max:1, fx:l=>l ? '已擁有' : '未擁有' },
+];
+const NEED_LAYERS = 7;
+
+let S = { coins:0, tier:0, unlocked:0, up:{}, found:{}, losses:0, runs:0, best:0, bestBank:0, ended:false, curse:false, crewDepth:3, stake:.25, streak:0 };
+UPS.forEach(u => S.up[u.id] = 0);
+let muted = false, parts = [], flash = 0, shake = 0, paused = false, crewAcc = 0;
+let R = { state:'ready', depth:0, pot:0, next:null, t:0, dur:0, peekLeft:0, shieldLeft:0, peeked:false, tower:[], drop:null, dropT:9, chest:0 };
+
+function fmt(n) {
+  if (n < 100 && n % 1 !== 0) return n.toFixed(n < 10 ? 2 : 1);
+  if (n < 1e4) return Math.floor(n).toLocaleString('en-US');
+  if (n < 1e8) return (n / 1e4).toFixed(1) + ' 萬';
+  if (n < 1e12) return (n / 1e8).toFixed(2) + ' 億';
+  if (n < 1e16) return (n / 1e12).toFixed(2) + ' 兆';
+  return n.toExponential(2);
+}
+const foundCount = () => Object.keys(S.found).length;
+const tBase = t => 5 * 9 ** Math.min(t, 5) * (TIERS[t].last ? 3 : 1);
+const potBase = t => tBase(t) * 1.2 ** S.up.bet * (1 + .04 * foundCount());
+const revenge = () => 1 + Math.min(1, S.streak * .1);
+const stakeCap = () => potBase(S.tier) * 100;
+const stakeAmount = () => Math.min(S.coins * S.stake, stakeCap());
+const curseOn = () => S.curse && S.up.curse > 0;
+const multOf = r => RAR[r].m * (curseOn() ? 1.25 : 1);
+const danger = (d, t) => Math.min(90, 7 + (6 - .4 * S.up.calm) * Math.max(0, d - 1) + Math.min(t, 6) + (curseOn() ? 8 : 0));
+const rollRar = () => { let x = Math.random() * RAR.reduce((a, b) => a + b.w, 0), r = 0; for (; r < RAR.length - 1; r++) { x -= RAR[r].w; if (x <= 0) break; } return r; };
+const costOf = u => Math.ceil(u.base * u.g ** S.up[u.id]);
+const insureP = () => S.up.insure * .08;
+function prepareNext() { R.next = { mimic:Math.random() * 100 < danger(R.depth, R.chest), rar:rollRar() }; R.peeked = false; }
+
+function openLayer() {
+  if (paused) return;
+  if (R.state === 'lost' && R.t < 1.3) return;
+  if (R.state === 'ready' || R.state === 'lost' || R.state === 'banked') {
+    const stake = stakeAmount();
+    S.coins -= stake;
+    R.stake = stake;
+    R.chest = S.tier; R.depth = 0; R.pot = potBase(S.tier) * revenge() + stake; R.tower = [];
+    R.peekLeft = S.up.peek; R.shieldLeft = S.up.shield;
+    R.next = { mimic:false, rar:rollRar() }; R.peeked = false;
+    S.runs++;
+  } else if (R.state !== 'decide') return;
+  R.state = 'suspense'; R.t = 0; R.dur = Math.min(1.25, .32 + R.depth * .13);
+  heartbeat(R.depth);
+}
+function resolve() {
+  const n = R.next;
+  if (n.mimic) {
+    if (R.shieldLeft > 0) { R.shieldLeft--; toast('護身符擋下了寶箱怪！'); sndShield(); n.mimic = false; n.rar = 0; n.saved = true; }
+    else return lose();
+  }
+  R.depth++;
+  const m = n.saved ? 1 : multOf(n.rar);
+  R.pot *= m; R.tower.push(n.rar);
+  if (R.chest < 6) {
+    const k = R.chest + '-' + n.rar;
+    if (!S.found[k]) { S.found[k] = 1; const it = ITEMS[R.chest][n.rar]; toast(`新發現：${it[0]} ${it[1]}（底注 +4%）`); drawCodex(); }
+    R.drop = { t:R.chest, r:n.rar, m }; R.dropT = 0;
+  } else { R.drop = { t:-1, r:n.rar, m }; R.dropT = 0; }
+  if (R.depth > S.best) S.best = R.depth;
+  R.state = 'decide'; R.t = 0;
+  prepareNext();
+  burstAt(450, 210, RAR[n.rar].c, 10 + n.rar * 24);
+  if (n.rar >= 3) { flash = calm ? 0 : .22 + (n.rar - 3) * .14; shake = calm ? 0 : 5 + n.rar * 3; }
+  sndSafe(n.rar, R.depth);
+}
+function lose() {
+  const keep = R.pot * insureP();
+  S.coins += keep; S.losses++;
+  R.lostPot = R.pot; R.kept = keep; R.lostStreak = S.streak; S.streak = 0;
+  R.lostTower = R.tower.length;
+  R.state = 'lost'; R.t = 0;
+  flash = calm ? 0 : .5; shake = calm ? 0 : 24;
+  burstAt(450, 230, '#e4506a', 90);
+  sndBite();
+  $('coins').classList.add('hurt'); setTimeout(() => $('coins').classList.remove('hurt'), 1600);
+  toast(keep > 0 ? `保險只賠回 ${fmt(keep)}` : `第 ${R.depth + 1} 層是寶箱怪`);
+}
+function bank() {
+  if (paused || R.state !== 'decide') return;
+  S.coins += R.pot;
+  if (R.pot > S.bestBank) S.bestBank = R.pot;
+  S.streak++;
+  const lastWin = TIERS[R.chest].last && R.depth >= NEED_LAYERS;
+  R.banked = R.pot; R.state = 'banked'; R.t = 0;
+  burstAt(450, 240, '#f2c14e', 50);
+  sndBank();
+  if (lastWin) { S.ended = true; S.tier = 5; paused = true; $('overlay').classList.add('on'); drawTiers(); save(); }
+}
+function peekNext() {
+  if (R.state !== 'decide' || R.peekLeft <= 0 || R.peeked) return;
+  R.peekLeft--; R.peeked = true; sndBuy();
+}
+function crewRun() {
+  const t = S.tier, stop = S.crewDepth;
+  let pot = potBase(t), layer = 0, alive = true;
+  while (layer < stop) {
+    if (layer > 0 && Math.random() * 100 < danger(layer, t)) { alive = false; break; }
+    pot *= multOf(rollRar()); layer++;
+  }
+  const gain = (alive ? pot : pot * insureP()) * .3;
+  S.coins += gain;
+  if (parts.length < 320) parts.push({ x:rand(690, 860), y:rand(90, 300), vx:0, vy:-28, life:1.1, text:alive ? `跟班 +${fmt(gain)}` : '跟班被吃了', c:alive ? '#f2c14e' : '#e4506a' });
+}
+function burstAt(x, y, c, count) {
+  for (let i = 0; i < count && parts.length < 320; i++) {
+    const a = rand(-Math.PI, 0), v = rand(110, 340);
+    parts.push({ x, y, vx:Math.cos(a) * v, vy:Math.sin(a) * v, life:rand(.5, 1.1), c:Math.random() < .55 ? c : '#f2c14e', s:rand(2, 5) });
+  }
+}
+function step(dt) {
+  if (paused) return;
+  R.dropT += dt; R.t += dt;
+  if (S.up.crew > 0) {
+    crewAcc += dt * S.up.crew / (6 * .85 ** S.up.train);
+    while (crewAcc >= 1) { crewAcc--; crewRun(); }
+  }
+  if (R.state === 'suspense' && R.t >= R.dur) resolve();
+  if ((R.state === 'lost' && R.t > 2.6) || (R.state === 'banked' && R.t > .9)) { R.state = 'ready'; R.tower = []; R.depth = 0; R.t = 0; }
+}
+
+// 繪圖
+function drawVault() {
+  const g = ctx.createRadialGradient(450, 220, 40, 450, 220, 520);
+  g.addColorStop(0, '#2d4f48'); g.addColorStop(1, '#0c1a18');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#16302b'; ctx.fillRect(0, 320, W, 80);
+  ctx.strokeStyle = 'rgba(255,255,255,.05)'; ctx.lineWidth = 2;
+  for (let x = 0; x < W; x += 90) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 320); ctx.stroke(); }
+  for (let y = 50; y < 320; y += 50) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(450, 334, 170, 20, 0, 0, 7); ctx.fill();
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function drawChest(x, y, s, T, lid) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  ctx.fillStyle = T.body; rr(-120, -40, 240, 120, 10); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,.14)'; ctx.fillRect(-120, 40, 240, 40);
+  ctx.fillStyle = T.band; ctx.fillRect(-92, -40, 26, 120); ctx.fillRect(66, -40, 26, 120);
+  if (lid > 0) { ctx.fillStyle = '#0a0f0e'; ctx.fillRect(-112, -46, 224, 18); }
+  ctx.save(); ctx.translate(0, -40 - lid * 44); ctx.transform(1, 0, 0, 1 - lid * .55, 0, 0);
+  ctx.fillStyle = T.body; ctx.beginPath(); ctx.moveTo(-124, 0); ctx.lineTo(-124, -36); ctx.quadraticCurveTo(0, -100, 124, -36); ctx.lineTo(124, 0); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = T.band; ctx.beginPath(); ctx.moveTo(-92, 0); ctx.lineTo(-92, -53); ctx.lineTo(-66, -60); ctx.lineTo(-66, 0); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(92, 0); ctx.lineTo(92, -53); ctx.lineTo(66, -60); ctx.lineTo(66, 0); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  if (lid === 0) { ctx.fillStyle = T.lock; rr(-22, -56, 44, 50, 7); ctx.fill(); ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.beginPath(); ctx.arc(0, -36, 7, 0, 7); ctx.fill(); ctx.fillRect(-3, -36, 6, 16); }
+  ctx.restore();
+}
+function drawBeam(col, a) {
+  ctx.save(); ctx.globalAlpha = a; ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createLinearGradient(0, 240, 0, 0);
+  g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(350, 250); ctx.lineTo(160, 0); ctx.lineTo(740, 0); ctx.lineTo(550, 250); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function drawMimic(x, y, s, T, t) {
+  drawChest(x, y, s, T, .5);
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  const b = Math.sin(t * 22) * 3;
+  ctx.fillStyle = '#fff'; [-44, 44].forEach(o => { ctx.beginPath(); ctx.arc(o, -92 + b, 18, 0, 7); ctx.fill(); });
+  ctx.fillStyle = '#c0203a'; [-44, 44].forEach(o => { ctx.beginPath(); ctx.arc(o, -90 + b, 9, 0, 7); ctx.fill(); });
+  ctx.fillStyle = '#fff';
+  for (let i = -4; i <= 4; i++) { ctx.beginPath(); ctx.moveTo(i * 24 - 12, -46); ctx.lineTo(i * 24 + 12, -46); ctx.lineTo(i * 24, -22); ctx.fill(); }
+  ctx.restore();
+}
+function drawTower() {
+  const n = R.state === 'lost' ? Math.ceil(R.tower.length * Math.max(0, 1 - R.t / .9)) : R.tower.length;
+  R.tower.slice(0, n).forEach((r, i) => {
+    const row = i % 7, col = Math.floor(i / 7), x = 60 + col * 72, y = 300 - row * 40;
+    drawChest(x, y, .18, TIERS[R.chest], 0);
+    ctx.fillStyle = RAR[r].c; ctx.beginPath(); ctx.arc(x + 32, y - 6, 6, 0, 7); ctx.fill();
+  });
+  if (n) { ctx.font = '700 15px "Microsoft JhengHei",sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = '#a9b8a6'; ctx.fillText(`已開 ${n} 層`, 34, 26); }
+}
+function draw(dt, now) {
+  ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
+  const sx = shake ? rand(-shake, shake) : 0, sy = shake ? rand(-shake, shake) : 0;
+  shake = Math.max(0, shake - dt * 45);
+  ctx.save(); ctx.translate(sx, sy);
+  drawVault();
+  const T = TIERS[R.state === 'ready' ? S.tier : R.chest];
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (R.state === 'lost') {
+    drawMimic(450, 262, 1.05, T, R.t);
+    const left = R.lostPot * Math.max(0, 1 - R.t / .9);
+    ctx.fillStyle = `rgba(160,20,45,${.32 * Math.max(.35, 1 - R.t / 2.6)})`; ctx.fillRect(0, 0, W, H);
+    ctx.font = '700 44px "Microsoft JhengHei",sans-serif'; ctx.fillStyle = '#ff7a8f';
+    ctx.fillText(`彩金 ${fmt(left)}`, 450, 46);
+    if (R.t > .9) {
+      ctx.font = '700 21px "Microsoft JhengHei",sans-serif'; ctx.fillStyle = '#f4ead2';
+      ctx.fillText(R.depth > 0 ? `剛剛收手的話，你有 ${fmt(R.lostPot)}` : '還沒開就被吃了', 450, 96);
+      if (R.lostStreak >= 2) { ctx.fillStyle = '#ff7a8f'; ctx.fillText(`${R.lostStreak} 連勝，斷了`, 450, 128); }
+    }
+  } else if (R.state === 'suspense') {
+    const p = Math.min(1, R.t / R.dur), w = calm ? 0 : Math.sin(now / 26) * (3 + p * (8 + R.depth * 1.5));
+    const red = R.depth ? danger(R.depth, R.chest) / 90 : 0;
+    drawBeam(red > .4 ? '#e4506a' : '#f2c14e', .08 + p * .35);
+    drawChest(450 + w, 262, 1 + p * .06, T, 0);
+  } else if (R.state === 'banked') {
+    drawChest(450, 262, 1, T, 0);
+    const k = Math.min(1, R.t / .3);
+    ctx.font = '700 40px "Microsoft JhengHei",sans-serif'; ctx.fillStyle = '#f2c14e'; ctx.fillText(`收進口袋 +${fmt(R.banked)}`, 450, 130 - k * 60);
+  } else {
+    const showing = R.state === 'decide' && R.drop && R.dropT < 1.1;
+    if (showing) drawBeam(RAR[R.drop.r].c, .65 * (1 - R.dropT / 1.1) + .05);
+    drawChest(450, 262, 1, T, 0);
+    if (showing) {
+      const d = R.drop, k = Math.min(1, R.dropT / .16), y = 150 - k * 34;
+      ctx.font = (44 + k * 22) + 'px serif'; ctx.fillStyle = '#fff'; ctx.fillText(d.t >= 0 ? ITEMS[d.t][d.r][0] : '🔒', 450, y);
+      ctx.font = '700 22px "Microsoft JhengHei",sans-serif'; ctx.fillStyle = RAR[d.r].c;
+      ctx.fillText((d.t >= 0 ? `【${RAR[d.r].n}】${ITEMS[d.t][d.r][1]}　` : `【${RAR[d.r].n}】`) + `彩金 ×${fmt(d.m)}`, 450, y - 58);
+    }
+    if (R.state === 'ready') { ctx.font = '19px "Microsoft JhengHei",sans-serif'; ctx.fillStyle = '#f4ead2'; ctx.fillText(TIERS[S.tier].last ? `開到第 ${NEED_LAYERS} 層再收手，就能看到箱底` : `${TIERS[S.tier].n}：起始彩金 ${fmt(potBase(S.tier) * revenge() + stakeAmount())}`, 450, 70); }
+  }
+  drawTower();
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i]; p.life -= dt; if (p.life <= 0) { parts.splice(i, 1); continue; }
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    ctx.globalAlpha = Math.min(1, p.life * 2);
+    if (p.text) { ctx.font = '700 15px "Microsoft JhengHei",sans-serif'; ctx.fillStyle = p.c; ctx.fillText(p.text, p.x, p.y); }
+    else { p.vy += 560 * dt; ctx.fillStyle = p.c; ctx.fillRect(p.x, p.y, p.s, p.s); }
+  }
+  ctx.globalAlpha = 1; ctx.restore();
+  if (flash > 0) { ctx.fillStyle = `rgba(255,255,255,${Math.min(.75, flash)})`; ctx.fillRect(0, 0, W, H); flash -= dt * 1.7; }
+}
+
+let last = performance.now(), uiT = 0, saveT = 0;
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  step(dt); draw(dt, now);
+  uiT += dt; if (uiT > .06) { uiT = 0; updateUI(); }
+  saveT += dt; if (saveT > 5) { saveT = 0; save(); }
+  requestAnimationFrame(frame);
+}
+
+// 介面
+const btns = {}, tierBtns = [];
+UPS.forEach(u => {
+  const b = document.createElement('button'); b.className = 'item';
+  b.innerHTML = '<span class="n"></span><span class="c"></span><span class="d"></span>';
+  b.onclick = () => buy(u); $('list').appendChild(b); btns[u.id] = b;
+});
+TIERS.forEach((T, i) => {
+  const b = document.createElement('button'); b.className = 'tier';
+  b.onclick = () => tierClick(i); $('tiers').appendChild(b); tierBtns.push(b);
+});
+function buy(u) {
+  if (S.up[u.id] >= u.max) return;
+  const c = costOf(u); if (S.coins < c) return;
+  S.coins -= c; S.up[u.id]++; sndBuy(); updateUI();
+}
+function tierClick(i) {
+  if (R.state === 'suspense' || R.state === 'decide') { toast('這一趟結束後才能換箱子'); return; }
+  if (TIERS[i].last && S.ended) return;
+  if (i <= S.unlocked) { S.tier = i; drawTiers(); return; }
+  if (i === S.unlocked + 1 && S.coins >= TIERS[i].cost) { S.coins -= TIERS[i].cost; S.unlocked = i; S.tier = i; sndBuy(); drawTiers(); }
+}
+function drawTiers() {
+  TIERS.forEach((T, i) => {
+    const b = tierBtns[i];
+    b.textContent = i <= S.unlocked ? (T.last && S.ended ? `${T.n} ✓` : T.n) : i === S.unlocked + 1 ? `解鎖${T.n} 🪙${fmt(T.cost)}` : '🔒';
+    b.hidden = i > S.unlocked + 2;
+    b.classList.toggle('on', i === S.tier);
+    b.classList.toggle('off', i > S.unlocked && (i !== S.unlocked + 1 || S.coins < T.cost));
+  });
+}
+function updateUI() {
+  $('coins').textContent = '🪙 ' + fmt(S.coins);
+  $('stats').textContent = `連勝 ${S.streak}・最深 ${S.best} 層・單趟最高 ${fmt(S.bestBank)}`;
+  const inRun = R.state === 'decide' || R.state === 'suspense';
+  const atDecide = R.state === 'decide';
+  const d = atDecide ? danger(R.depth, R.chest) : R.state === 'suspense' ? (R.depth ? danger(R.depth, R.chest) : 0) : 0;
+  $('pot').textContent = inRun ? `彩金 🪙 ${fmt(R.pot)}` : R.state === 'lost' ? '全沒了' : R.state === 'banked' ? '入袋為安' : S.streak ? `連勝加成 ×${fmt(revenge())}` : '準備開箱';
+  document.querySelectorAll('#stakes button').forEach(x => { x.classList.toggle('on', +x.dataset.s === S.stake); x.disabled = inRun; });
+  $('stakeInfo').textContent = inRun ? (R.stake ? `這趟押了 ${fmt(R.stake)}` : '') : `將押 ${fmt(stakeAmount())}・上限 ${fmt(stakeCap())}`;
+  $('depth').textContent = inRun ? `第 ${R.depth} 層` + (R.shieldLeft ? `・護身符 ${R.shieldLeft}` : '') : '';
+  $('dtext').textContent = atDecide ? `${d.toFixed(0)}%` : R.state === 'suspense' ? '……' : '第 1 層一定安全';
+  document.querySelector('#dbar i').style.width = d + '%';
+  const o = $('open'), b = $('bank'), p = $('peek');
+  o.disabled = R.state === 'suspense' || paused || (R.state === 'lost' && R.t < 1.3);
+  o.textContent = atDecide ? '再開一層' : R.state === 'suspense' ? '開箱中……' : '開箱';
+  b.disabled = !atDecide || paused;
+  const needMore = atDecide && TIERS[R.chest].last && R.depth < NEED_LAYERS;
+  b.textContent = atDecide ? `收手 +${fmt(R.pot)}` : '收手';
+  p.hidden = S.up.peek === 0;
+  p.disabled = !atDecide || R.peekLeft <= 0 || R.peeked;
+  p.textContent = `透視 ${R.peekLeft}`;
+  const line = $('peekline');
+  if (atDecide && R.peeked) { line.textContent = R.next.mimic ? '👁 透視結果：下一層是寶箱怪！' : `👁 透視結果：下一層安全，${RAR[R.next.rar].n} ×${fmt(multOf(R.next.rar))}`; line.style.color = R.next.mimic ? '#ff7a8f' : '#6fd17a'; }
+  else if (needMore) { line.textContent = `最後的箱子要開到第 ${NEED_LAYERS} 層再收手，才看得到箱底`; line.style.color = ''; }
+  else if (R.state === 'lost') { line.textContent = R.stake ? `你押上的 ${fmt(R.stake)} 也一起沒了` : '這趟沒押錢，只丟了彩金'; line.style.color = '#ff7a8f'; }
+  else if (!inRun && R.state === 'ready') { line.textContent = '押得越多賺得越快，被吃掉就連押金一起沒。收手才算你的。'; line.style.color = ''; }
+  else if (!atDecide || R.state !== 'decide') { line.textContent = ''; }
+  else { line.textContent = ''; }
+  $('curseWrap').hidden = !S.up.curse;
+  $('curse').checked = curseOn();
+  $('curse').disabled = inRun;
+  $('crewWrap').hidden = !S.up.crew;
+  $('crewDepth').value = S.crewDepth; $('crewN').textContent = S.crewDepth;
+  UPS.forEach(u => {
+    const el = btns[u.id], l = S.up[u.id], full = l >= u.max, c = costOf(u);
+    el.querySelector('.n').textContent = `${u.n}　${u.fx(l)}`;
+    el.querySelector('.c').textContent = full ? '已滿' : '🪙 ' + fmt(c);
+    el.querySelector('.d').textContent = u.d;
+    el.classList.toggle('off', full || S.coins < c);
+  });
+  drawTiers();
+}
+function drawCodex() {
+  let h = '<span></span>' + RAR.map(r => `<span style="color:${r.c};text-align:center">${r.n}</span>`).join('');
+  ITEMS.forEach((row, t) => {
+    h += `<span class="lab">${TIERS[t].n}</span>`;
+    row.forEach((it, r) => {
+      const has = S.found[t + '-' + r];
+      h += `<div class="slot" style="${has ? `border-color:${RAR[r].c}` : ''}">` + (has ? `<b>${it[0]}</b><span>${it[1]}</span>` : '<b style="opacity:.3">？</b>') + '</div>';
+    });
+  });
+  $('grid').innerHTML = h;
+  $('cinfo').textContent = `${foundCount()} / 36・每件起始彩金 +4%`;
+}
+let toastT;
+function toast(t) { const e = $('toast'); e.textContent = t; e.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => e.classList.remove('on'), 2000); }
+$('cb').onclick = () => { $('overlay').classList.remove('on'); paused = false; };
+$('open').onclick = () => { initAudio(); openLayer(); };
+$('bank').onclick = () => { initAudio(); bank(); };
+$('peek').onclick = () => { initAudio(); peekNext(); };
+document.querySelectorAll('#stakes button').forEach(x => { x.onclick = () => { S.stake = +x.dataset.s; sndBuy(); updateUI(); }; });
+$('curse').onchange = e => { S.curse = e.target.checked; };
+$('crewDepth').oninput = e => { S.crewDepth = +e.target.value; };
+window.addEventListener('keydown', e => {
+  if (e.repeat || e.target.tagName === 'INPUT') return;
+  if (e.code === 'Space') { e.preventDefault(); initAudio(); openLayer(); }
+  else if (e.code === 'KeyS') { initAudio(); bank(); }
+});
+
+// 聲音
+let AC;
+function initAudio() { if (AC) { if (AC.state === 'suspended') AC.resume(); return; } const C = window.AudioContext || window.webkitAudioContext; if (C) AC = new C(); }
+function tone(f, d, v, type = 'triangle', delay = 0) {
+  if (!AC || muted) return;
+  const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime + delay;
+  o.type = type; o.frequency.value = f;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + .01); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+  o.connect(g).connect(AC.destination); o.start(t); o.stop(t + d + .02);
+}
+const NOTES = [392, 440, 494, 587, 659, 784, 880, 988, 1175];
+const sndBuy = () => tone(740, .1, .1);
+function heartbeat(d) { const n = Math.min(4, 1 + Math.floor(d / 2)), gap = .26; for (let i = 0; i < n; i++) { tone(62, .13, .32, 'sine', i * gap); tone(52, .13, .26, 'sine', i * gap + .1); } }
+function sndSafe(r, d) { tone(NOTES[Math.min(8, d)], .28, .13); tone(NOTES[Math.min(8, d)] * 1.5, .3 + r * .1, .08, 'triangle', .05); if (r >= 3) tone(NOTES[Math.min(8, d)] * 2, .6, .08, 'sine', .12); }
+const sndBite = () => { tone(170, .35, .3, 'sawtooth'); tone(110, .5, .3, 'sawtooth', .12); tone(62, 1.2, .3, 'sawtooth', .3); [523, 466, 392, 311].forEach((f, i) => tone(f, .32, .1, 'triangle', .75 + i * .24)); };
+const sndShield = () => { tone(980, .25, .12); tone(1320, .35, .1, 'triangle', .08); };
+const sndBank = () => { [784, 988, 1175, 1568].forEach((f, i) => tone(f, .25, .11, 'triangle', i * .07)); };
+
+// 存檔
+function save() { try { localStorage.setItem(SAVE, JSON.stringify(S)); } catch (e) {} }
+function load() { try { const d = JSON.parse(localStorage.getItem(SAVE)); if (d) S = { ...S, ...d, up:{ ...S.up, ...d.up } }; } catch (e) {} }
+window.addEventListener('beforeunload', save);
+$('mute').onclick = () => { muted = !muted; $('mute').textContent = '聲音：' + (muted ? '關' : '開'); };
+let armed = false, armT;
+$('reset').onclick = () => {
+  const b = $('reset');
+  if (!armed) { armed = true; b.textContent = '清除進度？再按一次'; armT = setTimeout(() => { armed = false; b.textContent = '重新開始'; }, 3000); return; }
+  clearTimeout(armT); armed = false; b.textContent = '重新開始';
+  UPS.forEach(u => S.up[u.id] = 0);
+  Object.assign(S, { coins:0, tier:0, unlocked:0, found:{}, losses:0, runs:0, best:0, bestBank:0, ended:false, curse:false, crewDepth:3, stake:.25, streak:0 });
+  parts = []; paused = false; crewAcc = 0; R.state = 'ready'; R.tower = []; R.depth = 0;
+  $('overlay').classList.remove('on'); drawCodex(); drawTiers(); updateUI(); save();
+};
+
+load(); drawCodex(); drawTiers(); updateUI();
+requestAnimationFrame(frame);
+toast('開箱吧，記得收手');
+
+})();
+</script>
+</body>
+</html>
